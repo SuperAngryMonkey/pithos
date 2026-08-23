@@ -1,17 +1,17 @@
 #!/bin/bash
-# tupperware-new
-# Clones the Tupperware template, mints a fresh OAuth-based auth key,
+# pithos-new
+# Clones the Pithos template, mints a fresh OAuth-based auth key,
 # injects it into the new container, and triggers the firstboot service.
 #
-# Usage: tupperware-new <new-vmid> <hostname> [--storage <name>]
+# Usage: pithos-new <new-vmid> <hostname> [--storage <name>]
 #
 # Examples:
-#   tupperware-new 201 lab-lxc-01
-#   tupperware-new 202 db-cache --storage local-zfs
+#   pithos-new 201 lab-lxc-01
+#   pithos-new 202 db-cache --storage local-zfs
 #
 # Override defaults via env vars:
-#   TEMPLATE_VMID=9001 TAG=tag:prod tupperware-new 201 prod-lxc-01
-#   STORAGE=data-nvme tupperware-new 203 fast-app
+#   TEMPLATE_VMID=9001 TAG=tag:prod pithos-new 201 prod-lxc-01
+#   STORAGE=data-nvme pithos-new 203 fast-app
 
 set -euo pipefail
 
@@ -23,7 +23,7 @@ NETWORK_WAIT_RETRIES="${NETWORK_WAIT_RETRIES:-150}"
 
 usage() {
     cat >&2 <<USAGE
-Usage: tupperware-new <new-vmid> <hostname> [--storage <name>]
+Usage: pithos-new <new-vmid> <hostname> [--storage <name>]
 
 Arguments:
   new-vmid    VMID for the new container (e.g., 201)
@@ -115,7 +115,7 @@ fi
 # Verify template exists
 if ! pct status "$TEMPLATE_VMID" &>/dev/null; then
     echo "ERROR: Template VMID $TEMPLATE_VMID not found." >&2
-    echo "       Run tupperware-build-template first." >&2
+    echo "       Run pithos-build-template first." >&2
     exit 1
 fi
 

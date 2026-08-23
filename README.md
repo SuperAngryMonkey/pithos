@@ -1,14 +1,14 @@
-# 🍱 Tupperware
+# 🍱 Pithos
 
 **One-click Tailscale-connected LXC containers on Proxmox.**
 
-Tupperware is a small self-hosted web UI that runs on your Proxmox host. Open a browser, type a hostname, click a button — 30 seconds later you have a fresh LXC container that's already on your Tailscale tailnet, tagged, and reachable via Tailscale SSH from any of your devices.
+Pithos is a small self-hosted web UI that runs on your Proxmox host. Open a browser, type a hostname, click a button — 30 seconds later you have a fresh LXC container that's already on your Tailscale tailnet, tagged, and reachable via Tailscale SSH from any of your devices.
 
 No more `pct create` arguments. No more SSH keys to copy. No more `tailscale up` ceremony per container. Containers, sealed, portable. Like the bowls.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  TUPPERWARE                                       12:34:56  │
+│  PITHOS                                       12:34:56  │
 │  LXC PROVISIONER // proxlab                       ●  OK     │
 ├─────────────────────────────────────────────────────────────┤
 │  CONTAINERS  │  VMS  │  TAILNET PEERS  │  NEXT VMID         │
@@ -32,7 +32,7 @@ No more `pct create` arguments. No more SSH keys to copy. No more `tailscale up`
 
 - **A pre-built LXC template** with Tailscale baked in, configured for unprivileged operation with TUN passthrough.
 - **A web UI** with live streaming output that runs on your Proxmox host (port 8080).
-- **A CLI tool** (`tupperware-new`) for scripted/CI use that does the same thing.
+- **A CLI tool** (`pithos-new`) for scripted/CI use that does the same thing.
 - **First-boot auto-join**: cloned containers join your tailnet automatically using a fresh OAuth-minted single-use key. The key is wiped from the container after use.
 - **No standing credentials** in the template. Every clone gets a fresh 10-minute auth key.
 
@@ -40,7 +40,7 @@ No more `pct create` arguments. No more SSH keys to copy. No more `tailscale up`
 
 ## Prerequisites — read this first
 
-Tupperware is a thin wrapper around Tailscale + Proxmox. Both need some upfront configuration before installing Tupperware itself. Allow ~15 minutes the first time, mostly waiting for downloads.
+Pithos is a thin wrapper around Tailscale + Proxmox. Both need some upfront configuration before installing Pithos itself. Allow ~15 minutes the first time, mostly waiting for downloads.
 
 ### 1. A working Proxmox VE host
 
@@ -52,7 +52,7 @@ Tupperware is a thin wrapper around Tailscale + Proxmox. Both need some upfront 
 
 ### 2. The Debian 12 LXC template downloaded
 
-Tupperware builds its golden template from `debian-12-standard`. **Download it before installing Tupperware** — it can take a minute or two depending on your connection.
+Pithos builds its golden template from `debian-12-standard`. **Download it before installing Pithos** — it can take a minute or two depending on your connection.
 
 ```bash
 pveam update
@@ -65,7 +65,7 @@ Verify it landed:
 pveam list local | grep debian-12
 ```
 
-You should see the template listed. If you skip this step, the Tupperware build script will try to download it for you, but doing it ahead of time means a clean separation if anything fails.
+You should see the template listed. If you skip this step, the Pithos build script will try to download it for you, but doing it ahead of time means a clean separation if anything fails.
 
 ### 3. A Tailscale account
 
@@ -73,7 +73,7 @@ If you don't have one: https://login.tailscale.com/start. Free tier handles up t
 
 ### 4. A `tag:lxc` defined in your tailnet policy
 
-Tupperware tags every container it creates with `tag:lxc`. You need to declare this tag in your tailnet's ACL policy file before tag-using auth keys will work.
+Pithos tags every container it creates with `tag:lxc`. You need to declare this tag in your tailnet's ACL policy file before tag-using auth keys will work.
 
 In the [Tailscale admin console](https://login.tailscale.com/admin/acls/file), find or add a `tagOwners` block:
 
@@ -129,13 +129,13 @@ Without this, containers join the tailnet fine but you'll see a warning when run
 
 ### 7. A Tailscale OAuth client
 
-This is what lets Tupperware mint fresh auth keys on demand without storing a long-lived secret. **You only do this once.**
+This is what lets Pithos mint fresh auth keys on demand without storing a long-lived secret. **You only do this once.**
 
 1. Go to **[Tailnet Settings → Trust credentials](https://login.tailscale.com/admin/settings/trust-credentials)**
 2. Click **Generate credential**
 3. Choose **OAuth** as the credential type
 4. Configure:
-   - **Description**: `Tupperware provisioner` (or whatever's helpful for future-you)
+   - **Description**: `Pithos provisioner` (or whatever's helpful for future-you)
    - **Scopes**: enable **only** `Auth Keys: Write`. Leave everything else unchecked. Least privilege.
    - **Tags**: `tag:lxc` — restricts the client so it can only mint keys for `tag:lxc` devices. Critical for blast-radius reasons.
 5. Click **Generate credential**
@@ -168,28 +168,28 @@ ls -la /root/.tailscale/oauth
 # should show: -rw------- 1 root root ...
 ```
 
-### Step 2 — Install the Tupperware tooling
+### Step 2 — Install the Pithos tooling
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SuperAngryMonkey/tupperware/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/SuperAngryMonkey/pithos/main/scripts/install.sh | bash
 ```
 
 This installs:
-- `/usr/local/sbin/tupperware-build-template` — one-time template builder
-- `/usr/local/sbin/tupperware-new` — per-clone provisioner
+- `/usr/local/sbin/pithos-build-template` — one-time template builder
+- `/usr/local/sbin/pithos-new` — per-clone provisioner
 
 If you'd rather not curl-bash from the internet, clone the repo and run the install script locally:
 
 ```bash
-git clone https://github.com/SuperAngryMonkey/tupperware
-cd tupperware
+git clone https://github.com/SuperAngryMonkey/pithos
+cd pithos
 ./scripts/install.sh
 ```
 
 ### Step 3 — Build the golden template
 
 ```bash
-tupperware-build-template
+pithos-build-template
 ```
 
 This takes 2–4 minutes. It will:
@@ -203,13 +203,13 @@ This takes 2–4 minutes. It will:
 Override defaults via env vars if needed:
 
 ```bash
-STORAGE=local-zfs BRIDGE=vmbr1 VMID=9001 tupperware-build-template
+STORAGE=local-zfs BRIDGE=vmbr1 VMID=9001 pithos-build-template
 ```
 
 ### Step 4 — Install the web UI
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SuperAngryMonkey/tupperware/main/scripts/install-webui.sh | bash
+curl -fsSL https://raw.githubusercontent.com/SuperAngryMonkey/pithos/main/scripts/install-webui.sh | bash
 ```
 
 Or from the cloned repo:
@@ -218,7 +218,7 @@ Or from the cloned repo:
 ./scripts/install-webui.sh
 ```
 
-This installs Flask, drops the app in `/opt/tupperware/`, and starts a systemd service on port 8080.
+This installs Flask, drops the app in `/opt/pithos/`, and starts a systemd service on port 8080.
 
 ### Step 5 — Open the UI
 
@@ -227,7 +227,7 @@ This installs Flask, drops the app in `/opt/tupperware/`, and starts a systemd s
 echo "http://$(ip -4 addr show vmbr0 | awk '/inet / {print $2}' | cut -d/ -f1):8080/"
 ```
 
-Open that URL in any browser on your LAN or tailnet. You should see the Tupperware dashboard.
+Open that URL in any browser on your LAN or tailnet. You should see the Pithos dashboard.
 
 ---
 
@@ -248,18 +248,18 @@ Form fields:
 Same thing, scriptable:
 
 ```bash
-tupperware-new <vmid> <hostname>
+pithos-new <vmid> <hostname>
 
 # Examples
-tupperware-new 201 lab-lxc-01
-tupperware-new 202 webserver
+pithos-new 201 lab-lxc-01
+pithos-new 202 webserver
 ```
 
 The CLI doesn't take resource overrides — it inherits template defaults (1 CPU, 512MB RAM, 4GB disk). For custom sizing, use the web UI or apply `pct set` and `pct resize` after the clone.
 
 ### MCP (Claude Code / Claude Desktop)
 
-Provision from an AI client instead of the browser or shell. The `mcp/` directory ships a stdio MCP server that wraps the same provisioning path, exposing three tools — `tupperware_host_status`, `tupperware_list_containers`, and `tupperware_provision` (dry-run by default; no destroy tool). It's an HTTP client to this web app, so it runs no `pct` / SSH itself.
+Provision from an AI client instead of the browser or shell. The `mcp/` directory ships a stdio MCP server that wraps the same provisioning path, exposing three tools — `pithos_host_status`, `pithos_list_containers`, and `pithos_provision` (dry-run by default; no destroy tool). It's an HTTP client to this web app, so it runs no `pct` / SSH itself.
 
 See [`mcp/README.md`](mcp/README.md) for setup and [`docs/mcp.md`](docs/mcp.md) for the design.
 
@@ -280,36 +280,36 @@ tailscale ssh root@<hostname>
 
 ## Configuration
 
-Every setting below is an environment variable on the `tupperware` systemd service, and every one is optional — with none of them set, the app behaves exactly as it did before these options existed. Set them per host, according to what that host is.
+Every setting below is an environment variable on the `pithos` systemd service, and every one is optional — with none of them set, the app behaves exactly as it did before these options existed. Set them per host, according to what that host is.
 
 The clean way to set them is a systemd drop-in, so upgrades that replace `app.py` never touch your config:
 
 ```bash
-mkdir -p /etc/systemd/system/tupperware.service.d
-cat > /etc/systemd/system/tupperware.service.d/local.conf <<'EOF'
+mkdir -p /etc/systemd/system/pithos.service.d
+cat > /etc/systemd/system/pithos.service.d/local.conf <<'EOF'
 [Service]
-Environment=TUPPERWARE_DEFAULT_STORAGE=local-zfs
-Environment=TUPPERWARE_HIDE_STORAGES=scratch
+Environment=PITHOS_DEFAULT_STORAGE=local-zfs
+Environment=PITHOS_HIDE_STORAGES=scratch
 EOF
-systemctl daemon-reload && systemctl restart tupperware
+systemctl daemon-reload && systemctl restart pithos
 ```
 
 ### Access control
 
 | Variable | Default | What it does |
 |---|---|---|
-| `TUPPERWARE_AUTH_FILE` | `/root/.tupperware/auth` | Path to the HTTP Basic Auth file. One line, `username:werkzeug-hash`. **File present** → every route requires auth. **Absent** → unauthenticated, with a startup warning. **Malformed** → fails closed. |
-| `TUPPERWARE_ALLOW_SOURCES` | *(unset)* | Comma-separated CIDR allow list. Requests from any other source address get `403` before auth runs. Unset means no source restriction. |
-| `TUPPERWARE_BIND` | `0.0.0.0` | Listen address. Pin to a tailscale or LAN interface address to stop the app listening on other interfaces. |
+| `PITHOS_AUTH_FILE` | `/root/.pithos/auth` | Path to the HTTP Basic Auth file. One line, `username:werkzeug-hash`. **File present** → every route requires auth. **Absent** → unauthenticated, with a startup warning. **Malformed** → fails closed. |
+| `PITHOS_ALLOW_SOURCES` | *(unset)* | Comma-separated CIDR allow list. Requests from any other source address get `403` before auth runs. Unset means no source restriction. |
+| `PITHOS_BIND` | `0.0.0.0` | Listen address. Pin to a tailscale or LAN interface address to stop the app listening on other interfaces. |
 | `PORT` | `8080` | Listen port. Change it when something else already owns 8080 on the host. |
 
 Create an auth file with:
 
 ```bash
-mkdir -p /root/.tupperware
+mkdir -p /root/.pithos
 python3 -c "from werkzeug.security import generate_password_hash as g; \
-    import getpass; print('admin:' + g(getpass.getpass()))" > /root/.tupperware/auth
-chmod 600 /root/.tupperware/auth
+    import getpass; print('admin:' + g(getpass.getpass()))" > /root/.pithos/auth
+chmod 600 /root/.pithos/auth
 ```
 
 The file is re-read when it changes, so rotating a password needs no restart.
@@ -318,23 +318,23 @@ The file is re-read when it changes, so rotating a password needs no restart.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `TUPPERWARE_DEFAULT_STORAGE` | `local-lvm` | Default storage backend for provisioning. ZFS-backed hosts have no `local-lvm` and **must** set this. |
-| `TUPPERWARE_HIDE_STORAGES` | *(unset)* | Comma-separated backends to keep out of the provisioning picker — scratch or non-redundant disks that should never receive a container. The default storage is never hidden, even if listed, so a host always has a valid target. |
+| `PITHOS_DEFAULT_STORAGE` | `local-lvm` | Default storage backend for provisioning. ZFS-backed hosts have no `local-lvm` and **must** set this. |
+| `PITHOS_HIDE_STORAGES` | *(unset)* | Comma-separated backends to keep out of the provisioning picker — scratch or non-redundant disks that should never receive a container. The default storage is never hidden, even if listed, so a host always has a valid target. |
 
 ### Performance
 
 | Variable | Default | What it does |
 |---|---|---|
-| `TUPPERWARE_CACHE_TTL` | `30` | Seconds before cached inventory and host metrics are refreshed. Expired data is served immediately while a background thread refreshes it, so requests never block on `pct`. Clone and transfer bust the cache on completion. |
-| `TUPPERWARE_DISK_CACHE_TTL` | `600` | Seconds before cached SMART disk data is refreshed. Longer than the inventory TTL because `smartctl` is slow and drive health moves slowly. |
+| `PITHOS_CACHE_TTL` | `30` | Seconds before cached inventory and host metrics are refreshed. Expired data is served immediately while a background thread refreshes it, so requests never block on `pct`. Clone and transfer bust the cache on completion. |
+| `PITHOS_DISK_CACHE_TTL` | `600` | Seconds before cached SMART disk data is refreshed. Longer than the inventory TTL because `smartctl` is slow and drive health moves slowly. |
 
 And in the MCP client's environment (see [`mcp/README.md`](mcp/README.md)):
 
 | Variable | Default | What it does |
 |---|---|---|
-| `TUPPERWARE_URL` | *(required)* | Base URL of the web app the MCP talks to, e.g. `http://100.64.0.5:8080`. |
-| `TUPPERWARE_USER` / `TUPPERWARE_PASS` | *(unset)* | Basic Auth credentials, when the target host has an auth file. Leave unset against an un-authed host. |
-| `TUPPERWARE_READ_TIMEOUT` | `45` | Seconds to wait on read calls. Raise it for slow hosts with many containers. |
+| `PITHOS_URL` | *(required)* | Base URL of the web app the MCP talks to, e.g. `http://100.64.0.5:8080`. |
+| `PITHOS_USER` / `PITHOS_PASS` | *(unset)* | Basic Auth credentials, when the target host has an auth file. Leave unset against an un-authed host. |
+| `PITHOS_READ_TIMEOUT` | `45` | Seconds to wait on read calls. Raise it for slow hosts with many containers. |
 
 ### Worked examples
 
@@ -344,7 +344,7 @@ And in the MCP client's environment (see [`mcp/README.md`](mcp/README.md)):
 
 ```ini
 [Service]
-Environment=TUPPERWARE_ALLOW_SOURCES=127.0.0.0/8,10.0.0.0/24,100.64.0.0/10
+Environment=PITHOS_ALLOW_SOURCES=127.0.0.0/8,10.0.0.0/24,100.64.0.0/10
 ```
 
 **A host with a public IP, ZFS storage, a scratch disk, and 8080 already taken:**
@@ -352,9 +352,9 @@ Environment=TUPPERWARE_ALLOW_SOURCES=127.0.0.0/8,10.0.0.0/24,100.64.0.0/10
 ```ini
 [Service]
 Environment=PORT=8081
-Environment=TUPPERWARE_ALLOW_SOURCES=127.0.0.0/8,10.10.10.0/24,100.64.0.0/10
-Environment=TUPPERWARE_DEFAULT_STORAGE=local-zfs
-Environment=TUPPERWARE_HIDE_STORAGES=scratch
+Environment=PITHOS_ALLOW_SOURCES=127.0.0.0/8,10.10.10.0/24,100.64.0.0/10
+Environment=PITHOS_DEFAULT_STORAGE=local-zfs
+Environment=PITHOS_HIDE_STORAGES=scratch
 ```
 
 Pair that with an auth file and a host firewall rule for the port. See [`docs/security.md`](docs/security.md) for how the layers stack.
@@ -396,13 +396,13 @@ Update `/root/.tailscale/oauth` with the new values. No need to rebuild the temp
 │   Web Browser    │  HTTP      │  Proxmox Host                │
 │   on tailnet/LAN │ ─────────→ │                              │
 └──────────────────┘            │  ┌────────────────────────┐  │
-                                │  │ tupperware (Flask)     │  │
-                                │  │ /opt/tupperware/app.py │  │
+                                │  │ pithos (Flask)     │  │
+                                │  │ /opt/pithos/app.py │  │
                                 │  └──────────┬─────────────┘  │
                                 │             │                │
                                 │             ▼                │
                                 │  ┌────────────────────────┐  │
-                                │  │ tupperware-new         │  │
+                                │  │ pithos-new         │  │
                                 │  │ (bash, OAuth + pct)    │  │
                                 │  └──────────┬─────────────┘  │
                                 │             │                │
@@ -428,18 +428,18 @@ See [`docs/architecture.md`](docs/architecture.md) for the deep dive.
 ## Repository layout
 
 ```
-tupperware/
+pithos/
 ├── README.md                    # this file
 ├── LICENSE                      # MIT
 ├── scripts/
 │   ├── install.sh               # installs the build + clone scripts to /usr/local/sbin
 │   ├── install-webui.sh         # installs the Flask app + systemd unit
-│   ├── tupperware-build-template.sh
-│   └── tupperware-new.sh
+│   ├── pithos-build-template.sh
+│   └── pithos-new.sh
 ├── webui/
 │   └── app.py                   # the Flask app
 ├── mcp/                         # MCP server — provision LXCs from Claude Code / Desktop
-│   ├── tupperware_mcp.py        # stdio MCP server (FastMCP)
+│   ├── pithos_mcp.py        # stdio MCP server (FastMCP)
 │   ├── check_mcp.py             # standalone handshake self-test
 │   └── README.md                # MCP quickstart
 └── docs/

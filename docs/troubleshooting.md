@@ -64,7 +64,7 @@ pct exec 9000 -- bash -c 'echo "nameserver 1.1.1.1" > /etc/resolv.conf'
 pct exec 9000 -- getent hosts deb.debian.org
 ```
 
-Permanent fix in the build script: add `--nameserver "1.1.1.1 8.8.8.8"` to the `pct create` invocation in `tupperware-build-template`.
+Permanent fix in the build script: add `--nameserver "1.1.1.1 8.8.8.8"` to the `pct create` invocation in `pithos-build-template`.
 
 ---
 
@@ -110,7 +110,7 @@ Cloned containers can use `--accept-routes` safely — only the host has this pr
 
 ## OAuth client credentials not working
 
-**Symptom:** `tupperware-new` fails with "Failed to get OAuth access token" or "Failed to mint auth key".
+**Symptom:** `pithos-new` fails with "Failed to get OAuth access token" or "Failed to mint auth key".
 
 ### Check the credentials are loaded
 
@@ -148,7 +148,7 @@ Also verify `tag:lxc` is in your tailnet's `tagOwners`:
 
 ---
 
-## VMID 9000 already exists when running `tupperware-build-template`
+## VMID 9000 already exists when running `pithos-build-template`
 
 The build script refuses to overwrite an existing VMID. You have three options:
 
@@ -157,31 +157,31 @@ The build script refuses to overwrite an existing VMID. You have three options:
 ```bash
 pct stop 9000 2>/dev/null
 pct destroy 9000 --purge
-tupperware-build-template
+pithos-build-template
 ```
 
 ### Use a different VMID
 
 ```bash
-VMID=9001 tupperware-build-template
+VMID=9001 pithos-build-template
 ```
 
-But then your `tupperware-new` clones will fail because they default to template VMID 9000. Override per-clone:
+But then your `pithos-new` clones will fail because they default to template VMID 9000. Override per-clone:
 ```bash
-TEMPLATE_VMID=9001 tupperware-new 200 my-host
+TEMPLATE_VMID=9001 pithos-new 200 my-host
 ```
 
-Or edit `/usr/local/sbin/tupperware-new` and change the default.
+Or edit `/usr/local/sbin/pithos-new` and change the default.
 
-### Reuse the existing template if it already has Tupperware in it
+### Reuse the existing template if it already has Pithos in it
 
 Skip the build step entirely. Just verify:
 ```bash
-pct exec 9000 -- cat /etc/tupperware-template-version 2>/dev/null
+pct exec 9000 -- cat /etc/pithos-template-version 2>/dev/null
 pct exec 9000 -- systemctl is-enabled tailscale-firstboot 2>/dev/null
 ```
 
-If both work, the existing VMID 9000 is already a Tupperware template.
+If both work, the existing VMID 9000 is already a Pithos template.
 
 ---
 
@@ -189,11 +189,11 @@ If both work, the existing VMID 9000 is already a Tupperware template.
 
 Check the Flask logs:
 ```bash
-journalctl -u tupperware -n 50 --no-pager
+journalctl -u pithos -n 50 --no-pager
 ```
 
 Most likely causes:
-- `/usr/local/sbin/tupperware-new` is missing or not executable
+- `/usr/local/sbin/pithos-new` is missing or not executable
 - OAuth credentials are wrong (see above)
 - Template VMID is wrong or doesn't exist
 
@@ -207,8 +207,8 @@ pct exec <vmid> -- cat /var/log/tailscale-firstboot.log
 ```
 
 You'll see what `tailscale up` did. Common errors:
-- `auth key not provided` — the key file wasn't injected. Check `tupperware-new` output.
-- `auth key expired` — keys are 10-minute TTL. If clones take longer than that, increase `expirySeconds` in `tupperware-new`.
+- `auth key not provided` — the key file wasn't injected. Check `pithos-new` output.
+- `auth key expired` — keys are 10-minute TTL. If clones take longer than that, increase `expirySeconds` in `pithos-new`.
 - `tag not allowed` — see OAuth troubleshooting above.
 
 To re-trigger the join manually:
@@ -250,9 +250,9 @@ Now `apt-get install tailscale` (after adding the Tailscale repo per the install
 
 ## Still stuck?
 
-Open an issue at [github.com/SuperAngryMonkey/tupperware/issues](https://github.com/SuperAngryMonkey/tupperware/issues). Include:
+Open an issue at [github.com/SuperAngryMonkey/pithos/issues](https://github.com/SuperAngryMonkey/pithos/issues). Include:
 
 - Proxmox VE version (`pveversion`)
 - Output of the failing command
-- Relevant logs (`journalctl -u tupperware`, `/var/log/tailscale-firstboot.log` from the affected container)
+- Relevant logs (`journalctl -u pithos`, `/var/log/tailscale-firstboot.log` from the affected container)
 - Your network topology (DHCP server, LAN subnet, Tailscale tailnet name)

@@ -1,25 +1,25 @@
 #!/bin/bash
-# tupperware-import-template
-# Downloads a pre-built Tupperware-ready LXC template from GitHub Releases
+# pithos-import-template
+# Downloads a pre-built Pithos-ready LXC template from GitHub Releases
 # and restores it as a Proxmox template at the configured VMID.
 #
-# Usage: tupperware-import-template [--vmid <n>] [--storage <name>] [--url <url>]
+# Usage: pithos-import-template [--vmid <n>] [--storage <name>] [--url <url>]
 #
 # Defaults:
 #   VMID:    9000
 #   Storage: local-lvm
-#   URL:     https://github.com/SuperAngryMonkey/tupperware/releases/latest/download/tupperware-template.tar.zst
+#   URL:     https://github.com/SuperAngryMonkey/pithos/releases/latest/download/pithos-template.tar.zst
 
 set -euo pipefail
 
 VMID="${VMID:-9000}"
 STORAGE="${STORAGE:-local-lvm}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
-URL="${URL:-https://github.com/SuperAngryMonkey/tupperware/releases/latest/download/tupperware-template.tar.zst}"
+URL="${URL:-https://github.com/SuperAngryMonkey/pithos/releases/latest/download/pithos-template.tar.zst}"
 
 usage() {
     cat >&2 <<USAGE
-Usage: tupperware-import-template [options]
+Usage: pithos-import-template [options]
 
 Options:
   --vmid <n>           Target VMID for the imported template (default: 9000)
@@ -54,7 +54,7 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-echo "[*] Tupperware template importer"
+echo "[*] Pithos template importer"
 echo "    VMID=$VMID  STORAGE=$STORAGE  URL=$URL"
 echo
 
@@ -79,7 +79,7 @@ DUMP_PATH=$(pvesh get /storage/"$TEMPLATE_STORAGE" --output-format json 2>/dev/n
 DUMP_DIR="${DUMP_PATH}/dump"
 mkdir -p "$DUMP_DIR"
 
-LOCAL_FILE="${DUMP_DIR}/tupperware-template-import.tar.zst"
+LOCAL_FILE="${DUMP_DIR}/pithos-template-import.tar.zst"
 
 # Download
 echo "[*] Downloading template from $URL"
@@ -110,6 +110,6 @@ pct template "$VMID"
 rm -f "$LOCAL_FILE"
 
 echo
-echo "[OK] Tupperware template VMID $VMID is ready."
-echo "     Tupperware can now clone from it."
+echo "[OK] Pithos template VMID $VMID is ready."
+echo "     Pithos can now clone from it."
 echo "     If the web UI is showing 'No Template Found', refresh the page."

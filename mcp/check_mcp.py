@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone MCP handshake check — proves tupperware_mcp.py works as an MCP
+"""Standalone MCP handshake check — proves pithos_mcp.py works as an MCP
 server without involving Claude Code. Run from the mcp/ dir:
 
     ./.venv/bin/python check_mcp.py
@@ -14,7 +14,7 @@ from mcp.client.stdio import stdio_client
 
 
 async def main():
-    params = StdioServerParameters(command="./.venv/bin/python", args=["tupperware_mcp.py"])
+    params = StdioServerParameters(command="./.venv/bin/python", args=["pithos_mcp.py"])
     async with stdio_client(params) as (r, w):
         async with ClientSession(r, w) as s:
             info = await s.initialize()

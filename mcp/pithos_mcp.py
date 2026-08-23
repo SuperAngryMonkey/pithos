@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Tupperware MCP — provision Tailscale-joined LXCs on Proxmox from Claude Code.
+"""Pithos MCP — provision Tailscale-joined LXCs on Proxmox from Claude Code.
 
-A thin stdio MCP wrapper over the Tupperware Flask app (webui/app.py). It does
+A thin stdio MCP wrapper over the Pithos Flask app (webui/app.py). It does
 NOT run `pct` or SSH anything itself — every action goes through the same tested
 HTTP surface the web UI uses, so the server holds no direct root power.
 
 Env:
-  TUPPERWARE_URL      Base URL of the Tupperware web app.
+  PITHOS_URL      Base URL of the Pithos web app.
                       Required. Example: http://192.0.2.9:8080
                       (use the tailnet IP / MagicDNS name if your Mac isn't on
                       the same LAN as proxlab, e.g. http://100.x.y.z:8080)
-  TUPPERWARE_TIMEOUT  Provision timeout in seconds. Default: 600.
+  PITHOS_TIMEOUT  Provision timeout in seconds. Default: 600.
 
 Register with Claude Code (see mcp/README.md):
-  claude mcp add tupperware -- \
-    /path/to/projects/tupperware/mcp/.venv/bin/python \
-    /path/to/projects/tupperware/mcp/tupperware_mcp.py
+  claude mcp add pithos -- \
+    /path/to/projects/pithos/mcp/.venv/bin/python \
+    /path/to/projects/pithos/mcp/pithos_mcp.py
 """
 import os
 import re
@@ -24,24 +24,29 @@ from typing import Optional
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-BASE_URL = os.environ.get("TUPPERWARE_URL", "").rstrip("/")
+def _env(name, default=None):
+    """Read PITHOS_<name>, falling back to the pre-0.3.0 TUPPERWARE_<name>."""
+    return os.environ.get("PITHOS_" + name,
+                          os.environ.get("TUPPERWARE_" + name, default))
+
+BASE_URL = _env("URL", "").rstrip("/")
 if not BASE_URL:
     raise SystemExit(
-        "TUPPERWARE_URL is not set. Point it at your tupperware web app, "
-        "e.g. TUPPERWARE_URL=http://<host>:8080"
+        "PITHOS_URL is not set. Point it at your pithos web app, "
+        "e.g. PITHOS_URL=http://<host>:8080"
     )
-PROVISION_TIMEOUT = float(os.environ.get("TUPPERWARE_TIMEOUT", "600"))
+PROVISION_TIMEOUT = float(_env("TIMEOUT", "600"))
 
 # v0.2.2: HTTP Basic Auth. Set both when the web app has an auth file.
-_AUTH_USER = os.environ.get("TUPPERWARE_USER", "")
-_AUTH_PASS = os.environ.get("TUPPERWARE_PASS", "")
+_AUTH_USER = _env("USER", "")
+_AUTH_PASS = _env("PASS", "")
 AUTH = (_AUTH_USER, _AUTH_PASS) if _AUTH_USER else None
-READ_TIMEOUT = float(os.environ.get("TUPPERWARE_READ_TIMEOUT", "45"))
+READ_TIMEOUT = float(_env("READ_TIMEOUT", "45"))
 
 HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9-]+$")
 STORAGE_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
-mcp = FastMCP("tupperware")
+mcp = FastMCP("pithos")
 
 
 async def _get(path: str, timeout: float = READ_TIMEOUT) -> dict:
@@ -52,7 +57,7 @@ async def _get(path: str, timeout: float = READ_TIMEOUT) -> dict:
 
 
 @mcp.tool()
-async def tupperware_host_status() -> dict:
+async def pithos_host_status() -> dict:
     """Return proxlab host status: container/VM counts, tailnet peer count, the
     next free VMID (the auto-pick target), available container storage backends,
     and whether the golden LXC template is ready. Read-only. Call this before
@@ -60,22 +65,22 @@ async def tupperware_host_status() -> dict:
     try:
         return await _get("/api/status")
     except Exception as e:
-        return {"error": f"Could not reach Tupperware at {BASE_URL}: {e}"}
+        return {"error": f"Could not reach Pithos at {BASE_URL}: {e}"}
 
 
 @mcp.tool()
-async def tupperware_list_containers() -> dict:
+async def pithos_list_containers() -> dict:
     """List the LXC containers currently on proxlab: VMID, hostname, status,
     cores/memory/disk, storage backend, LAN + tailnet IP, and notes. Read-only.
     The golden template is excluded."""
     try:
         return await _get("/api/containers")
     except Exception as e:
-        return {"error": f"Could not reach Tupperware at {BASE_URL}: {e}"}
+        return {"error": f"Could not reach Pithos at {BASE_URL}: {e}"}
 
 
 @mcp.tool()
-async def tupperware_disk_health() -> dict:
+async def pithos_disk_health() -> dict:
     """SMART health for the host's physical disks: model, capacity, power-on
     hours, wear, lifetime writes, reallocated sectors, temperature, and the
     drive's own PASS/FAIL verdict. Read-only.
@@ -87,11 +92,11 @@ async def tupperware_disk_health() -> dict:
     try:
         return await _get("/api/disks")
     except Exception as e:
-        return {"error": f"Could not reach Tupperware at {BASE_URL}: {e}"}
+        return {"error": f"Could not reach Pithos at {BASE_URL}: {e}"}
 
 
 @mcp.tool()
-async def tupperware_provision(
+async def pithos_provision(
     hostname: str,
     cores: Optional[int] = None,
     memory: Optional[int] = None,
@@ -132,10 +137,10 @@ async def tupperware_provision(
     try:
         status = await _get("/api/status")
     except Exception as e:
-        return {"error": f"Could not reach Tupperware at {BASE_URL}: {e}"}
+        return {"error": f"Could not reach Pithos at {BASE_URL}: {e}"}
     if not status.get("template_ready", True):
         return {"error": "Golden template not ready on host; build it first "
-                         "(tupperware-build-template)."}
+                         "(pithos-build-template)."}
 
     resolved_vmid = vmid if vmid is not None else status.get("next_vmid")
     resolved_storage = storage or status.get("default_storage")
@@ -153,7 +158,7 @@ async def tupperware_provision(
         return {
             "dry_run": True,
             "plan": plan,
-            "next_step": "Call tupperware_provision again with the same args plus "
+            "next_step": "Call pithos_provision again with the same args plus "
                          "dry_run=false to create it.",
         }
 

@@ -1,6 +1,6 @@
 #!/bin/bash
-# tupperware-uninstall
-# Cleanly removes Tupperware from a Proxmox host.
+# pithos-uninstall
+# Cleanly removes Pithos from a Proxmox host.
 # Asks before destroying the template and OAuth credentials.
 
 set -uo pipefail
@@ -12,18 +12,18 @@ fi
 
 TEMPLATE_VMID="${TEMPLATE_VMID:-9000}"
 
-echo "Tupperware uninstall"
+echo "Pithos uninstall"
 echo "===================="
 echo
 
 # Stop and remove the web UI service
-if systemctl is-active --quiet tupperware 2>/dev/null; then
-    echo "[*] Stopping tupperware service..."
-    systemctl stop tupperware
+if systemctl is-active --quiet pithos 2>/dev/null; then
+    echo "[*] Stopping pithos service..."
+    systemctl stop pithos
 fi
-if [[ -f /etc/systemd/system/tupperware.service ]]; then
-    systemctl disable tupperware 2>/dev/null || true
-    rm -f /etc/systemd/system/tupperware.service
+if [[ -f /etc/systemd/system/pithos.service ]]; then
+    systemctl disable pithos 2>/dev/null || true
+    rm -f /etc/systemd/system/pithos.service
     echo "[*] Removed systemd unit"
 fi
 
@@ -39,13 +39,13 @@ fi
 systemctl daemon-reload
 
 # Remove Flask app
-if [[ -d /opt/tupperware ]]; then
-    rm -rf /opt/tupperware
-    echo "[*] Removed /opt/tupperware"
+if [[ -d /opt/pithos ]]; then
+    rm -rf /opt/pithos
+    echo "[*] Removed /opt/pithos"
 fi
 
 # Remove CLI scripts
-for s in tupperware-build-template tupperware-new tupperware-preflight tupperware-uninstall; do
+for s in pithos-build-template pithos-new pithos-preflight pithos-uninstall; do
     if [[ -e /usr/local/sbin/$s ]]; then
         rm -f /usr/local/sbin/$s
         echo "[*] Removed /usr/local/sbin/$s"
@@ -88,7 +88,7 @@ if [[ -f /root/.tailscale/oauth ]]; then
 fi
 
 echo
-echo "[OK] Tupperware uninstalled."
+echo "[OK] Pithos uninstalled."
 echo
 echo "Note: Cloned containers (VMID 200+) are NOT removed by this script."
 echo "      List them with: pct list"

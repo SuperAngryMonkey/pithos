@@ -1,10 +1,10 @@
 # Disk health
 
-Tupperware reads SMART data for the host's physical disks and exposes it at
-`GET /api/disks`, and through the `tupperware_disk_health` MCP tool.
+Pithos reads SMART data for the host's physical disks and exposes it at
+`GET /api/disks`, and through the `pithos_disk_health` MCP tool.
 
 Requires `smartutils` (`smartctl`) on the host, and root — which the service
-already runs as. Results are cached for `TUPPERWARE_DISK_CACHE_TTL` seconds
+already runs as. Results are cached for `PITHOS_DISK_CACHE_TTL` seconds
 (default 600) on the same stale-while-revalidate cache as the inventory, so a
 slow `smartctl` never blocks a request.
 
@@ -32,7 +32,7 @@ trustworthy there.
 SATA drives are inconsistent. Vendors reuse attribute IDs for entirely
 different things — ID 233 is `Media_Wearout_Indicator` on Intel drives but
 `NAND_GiB_Written` on SanDisk, a byte counter that would decode as 0% wear
-forever. Tupperware therefore accepts a wear attribute only when its *name*
+forever. Pithos therefore accepts a wear attribute only when its *name*
 also looks like a life gauge, and reports `used_pct: null` rather than
 guessing when no trustworthy attribute exists.
 

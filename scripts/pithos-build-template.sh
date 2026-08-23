@@ -1,18 +1,18 @@
 #!/bin/bash
-# tupperware-build-template
+# pithos-build-template
 # Builds a Debian 12 LXC template with Tailscale pre-installed.
 # Cloned containers auto-join the tailnet on first boot via OAuth-minted keys.
 #
 # Run on a Proxmox VE host as root.
 #
 # Override defaults via env vars or flags:
-#   STORAGE=local-zfs BRIDGE=vmbr1 VMID=9001 tupperware-build-template
-#   tupperware-build-template --storage local-zfs --bridge vmbr1
+#   STORAGE=local-zfs BRIDGE=vmbr1 VMID=9001 pithos-build-template
+#   pithos-build-template --storage local-zfs --bridge vmbr1
 
 set -euo pipefail
 
 VMID="${VMID:-9000}"
-HOSTNAME="${TEMPLATE_HOSTNAME:-tupperware-tmpl}"
+HOSTNAME="${TEMPLATE_HOSTNAME:-pithos-tmpl}"
 STORAGE="${STORAGE:-local-lvm}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 BRIDGE="${BRIDGE:-vmbr0}"
@@ -23,7 +23,7 @@ NETWORK_WAIT_RETRIES="${NETWORK_WAIT_RETRIES:-150}"
 
 usage() {
     cat >&2 <<USAGE
-Usage: tupperware-build-template [options]
+Usage: pithos-build-template [options]
 
 Options:
   --vmid <n>          VMID for the template (default: 9000)
@@ -65,7 +65,7 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-echo "[*] Tupperware template builder"
+echo "[*] Pithos template builder"
 echo "    VMID=$VMID  STORAGE=$STORAGE  BRIDGE=$BRIDGE  DISK=${DISK_GB}G"
 echo
 
@@ -247,7 +247,7 @@ truncate -s 0 /etc/machine-id
 rm -f /var/lib/dbus/machine-id
 ln -s /etc/machine-id /var/lib/dbus/machine-id
 
-echo "tupperware-template built $(date -u)" > /etc/tupperware-template-version
+echo "pithos-template built $(date -u)" > /etc/pithos-template-version
 INNER_EOF
 
 # Stop and convert
@@ -258,6 +258,6 @@ echo "[*] Converting to template..."
 pct template "$VMID"
 
 echo
-echo "[OK] Tupperware template VMID $VMID is ready on storage '$STORAGE'."
-echo "     Spin up clones with: tupperware-new <new-vmid> <hostname>"
+echo "[OK] Pithos template VMID $VMID is ready on storage '$STORAGE'."
+echo "     Spin up clones with: pithos-new <new-vmid> <hostname>"
 echo "     Or via web UI:       http://<this-host>:8080/"

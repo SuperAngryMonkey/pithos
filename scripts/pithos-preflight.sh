@@ -1,7 +1,7 @@
 #!/bin/bash
-# tupperware-preflight
-# Validates Proxmox host readiness for Tupperware install/use.
-# Run before tupperware-build-template to catch issues early.
+# pithos-preflight
+# Validates Proxmox host readiness for Pithos install/use.
+# Run before pithos-build-template to catch issues early.
 #
 # Exit codes:
 #   0 = ready (no issues)
@@ -35,7 +35,7 @@ warn()  { echo -e "[${Y}!${N}] WARN: $1"; WARNINGS=$((WARNINGS+1)); }
 err()   { echo -e "[${R}✗${N}] FAIL: $1"; ERRORS=$((ERRORS+1)); }
 info()  { echo -e "    ${B}$1${N}"; }
 
-echo "Tupperware preflight check"
+echo "Pithos preflight check"
 echo "=========================="
 echo
 
@@ -45,7 +45,7 @@ if command -v pveversion >/dev/null 2>&1; then
     ok "Proxmox VE detected ($PVE_VER)"
 else
     err "Not running on a Proxmox VE host (no pveversion command)"
-    info "Tupperware only runs on Proxmox VE."
+    info "Pithos only runs on Proxmox VE."
 fi
 
 if ! command -v pct >/dev/null 2>&1; then
@@ -70,7 +70,7 @@ if getent hosts api.tailscale.com >/dev/null 2>&1; then
     ok "Tailscale API reachable (api.tailscale.com)"
 else
     err "Cannot resolve api.tailscale.com"
-    info "Tupperware needs this to mint auth keys."
+    info "Pithos needs this to mint auth keys."
 fi
 
 if getent hosts pkgs.tailscale.com >/dev/null 2>&1; then
@@ -156,7 +156,7 @@ if command -v tailscale >/dev/null 2>&1; then
         ok "Tailscale running on host (this host: $TS_SELF)"
     else
         warn "Tailscale installed but not running / not authenticated"
-        info "Host doesn't need Tailscale for Tupperware to work,"
+        info "Host doesn't need Tailscale for Pithos to work,"
         info "but it's recommended for accessing the web UI over tailnet."
     fi
 else
@@ -235,7 +235,7 @@ echo
 echo "=========================="
 if (( ERRORS > 0 )); then
     echo -e "${R}STATUS: NOT READY${N} ($ERRORS errors, $WARNINGS warnings)"
-    echo "Fix the errors above, then re-run tupperware-preflight."
+    echo "Fix the errors above, then re-run pithos-preflight."
     exit 2
 elif (( WARNINGS > 0 )); then
     echo -e "${Y}STATUS: READY WITH WARNINGS${N} ($WARNINGS warnings)"
@@ -243,6 +243,6 @@ elif (( WARNINGS > 0 )); then
     exit 1
 else
     echo -e "${G}STATUS: READY${N}"
-    echo "Run: tupperware-build-template"
+    echo "Run: pithos-build-template"
     exit 0
 fi

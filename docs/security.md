@@ -1,12 +1,12 @@
 # Security — Credentials, Keys, and Web App Access
 
-Tupperware's whole design rests on one piece of long-lived credential: a Tailscale OAuth client stored at `/root/.tailscale/oauth` on your Proxmox host. This document explains what that credential does, what it can and can't do, and how to rotate it if anything ever feels off. The second half covers securing the web app itself — authentication, source scoping, and how the layers stack.
+Pithos's whole design rests on one piece of long-lived credential: a Tailscale OAuth client stored at `/root/.tailscale/oauth` on your Proxmox host. This document explains what that credential does, what it can and can't do, and how to rotate it if anything ever feels off. The second half covers securing the web app itself — authentication, source scoping, and how the layers stack.
 
 ---
 
 ## The threat model in one paragraph
 
-Tupperware uses your OAuth client to mint **single-use, 10-minute, pre-authorized, tag-restricted** Tailscale auth keys, one per container clone. The OAuth client itself never expires — that's why we use OAuth instead of a standing auth key. If a single minted key leaks, it expires in 10 minutes and can only join one device with `tag:lxc`. If your OAuth client leaks, an attacker can mint unlimited `tag:lxc` devices on your tailnet for as long as the client remains valid — they cannot do anything else (read other devices, modify ACLs, change DNS, etc.) because the client is scoped to `Auth Keys: Write` with tag restriction.
+Pithos uses your OAuth client to mint **single-use, 10-minute, pre-authorized, tag-restricted** Tailscale auth keys, one per container clone. The OAuth client itself never expires — that's why we use OAuth instead of a standing auth key. If a single minted key leaks, it expires in 10 minutes and can only join one device with `tag:lxc`. If your OAuth client leaks, an attacker can mint unlimited `tag:lxc` devices on your tailnet for as long as the client remains valid — they cannot do anything else (read other devices, modify ACLs, change DNS, etc.) because the client is scoped to `Auth Keys: Write` with tag restriction.
 
 In short: the blast radius of a leaked OAuth client is "someone could add fake tag:lxc devices to your tailnet." Your tailnet ACLs determine what those fake devices could actually reach.
 
@@ -31,7 +31,7 @@ The client secret is the only sensitive value. The client ID is similar to a use
 
 ## What the credentials can do
 
-With Tupperware's recommended OAuth client configuration (`Auth Keys: Write`, restricted to `tag:lxc`), the credential can:
+With Pithos's recommended OAuth client configuration (`Auth Keys: Write`, restricted to `tag:lxc`), the credential can:
 
 - Request an access token from `api.tailscale.com/api/v2/oauth/token`
 - Use the access token to mint Tailscale auth keys (`POST /api/v2/tailnet/-/keys`) — but only keys for devices tagged `tag:lxc`
@@ -69,7 +69,7 @@ If you suspect your credentials may have been exposed (committed to a public rep
 ### Step 1 — Revoke the old client
 
 1. Go to https://login.tailscale.com/admin/settings/oauth
-2. Find your existing Tupperware OAuth client in the list
+2. Find your existing Pithos OAuth client in the list
 3. Click the trash icon to revoke it
 
 The moment you click revoke, the old credential stops working. Any in-progress clones using the old credential will fail (worst case: a container exists but didn't join the tailnet — you can manually inject a fresh key later).
@@ -78,15 +78,15 @@ The moment you click revoke, the old credential stops working. Any in-progress c
 
 1. Same page → **+ Generate credential**
 2. Configure:
-   - Description: `Tupperware provisioner` (or your preferred label)
+   - Description: `Pithos provisioner` (or your preferred label)
    - Scopes: **Auth Keys: Write** only
    - Tags: `tag:lxc`
 3. Click **Generate credential**
 4. Copy the new Client ID and Client Secret immediately (shown once)
 
-### Step 3 — Update every host running Tupperware
+### Step 3 — Update every host running Pithos
 
-On EACH Proxmox host with Tupperware installed:
+On EACH Proxmox host with Pithos installed:
 
 ```bash
 cat > /root/.tailscale/oauth <<'EOF'
@@ -103,7 +103,7 @@ No service restart needed. The clone script reads the file fresh on every invoca
 Test a clone via the web UI or CLI:
 
 ```bash
-tupperware-new 299 rotate-test
+pithos-new 299 rotate-test
 ```
 
 Should succeed. If it does, rotation is complete.
@@ -112,11 +112,11 @@ Should succeed. If it does, rotation is complete.
 
 ## What is NOT in the credentials file or anywhere on your hosts
 
-To be explicit about what Tupperware does NOT store:
+To be explicit about what Pithos does NOT store:
 
-- **No user account credentials.** Tupperware never sees your Tailscale account password or 2FA tokens.
+- **No user account credentials.** Pithos never sees your Tailscale account password or 2FA tokens.
 - **No standing auth keys.** Every clone gets a fresh single-use key that's shredded after use.
-- **No SSH private keys.** Tupperware does not generate or store SSH keys.
+- **No SSH private keys.** Pithos does not generate or store SSH keys.
 - **No state file with persistent secrets.** All state lives in Proxmox config files and the OAuth credentials file.
 
 The cloned containers themselves contain no credentials at all after first boot — the auth key is shredded once `tailscale up` succeeds.
@@ -158,7 +158,7 @@ Tailscale logs OAuth token requests in the audit log (https://login.tailscale.co
 ## Securing the web app itself
 
 The OAuth credential above is one secret. The other exposure is the web app: it runs as
-root and shells out to `pct`, `qm`, `pvesm`, and the `tupperware-*` scripts, so whoever
+root and shells out to `pct`, `qm`, `pvesm`, and the `pithos-*` scripts, so whoever
 can reach it and authenticate can create and move containers on that host. There is no
 destroy or purge path anywhere in the app, so the worst case from a leaked credential is
 unwanted containers and consumed resources — not destroyed data.
@@ -168,7 +168,7 @@ combination that matches that host's exposure. All three are set as environment 
 on the service; see the [README Configuration section](../README.md#configuration) for
 syntax and defaults.
 
-### 1. Authentication — `TUPPERWARE_AUTH_FILE`
+### 1. Authentication — `PITHOS_AUTH_FILE`
 
 HTTP Basic Auth covering **every** route: the HTML UI, `/api/status`, `/api/containers`,
 `/clone-stream`, and `/transfer-stream`. Enabled by the presence of the auth file; absent
@@ -181,7 +181,7 @@ Passwords are stored as werkzeug hashes, never plaintext, and compared with
 Give each host its own credential. Sharing one across hosts turns a single leak into a
 multi-host leak for no benefit.
 
-### 2. Source scoping — `TUPPERWARE_ALLOW_SOURCES`
+### 2. Source scoping — `PITHOS_ALLOW_SOURCES`
 
 A CIDR allow list checked before authentication; anything from another source address gets
 `403`. Unset means no restriction, which is the right setting for a host behind a perimeter
@@ -189,12 +189,12 @@ firewall. It exists for hosts that are actually reachable from the internet.
 
 A malformed CIDR fails at startup rather than leaving the host silently unrestricted.
 
-### 3. Listen interface — `TUPPERWARE_BIND`
+### 3. Listen interface — `PITHOS_BIND`
 
 Pins the listener to one address, so the app never accepts connections on other interfaces.
 Use it when a single interface is the correct scope. When the app must answer on two
 internal interfaces (LAN *and* tailnet) but never externally, leave the default bind and
-scope with `TUPPERWARE_ALLOW_SOURCES` plus a host firewall rule instead.
+scope with `PITHOS_ALLOW_SOURCES` plus a host firewall rule instead.
 
 ### Layering, and what each layer is worth
 
@@ -214,7 +214,7 @@ trusted LAN reasonably has only the first, or none.
 
 The app defaults to `8080`. If something else on the host already owns that port — a
 monitoring agent or IDS, for example — set `PORT` rather than displacing the incumbent, and
-remember to reflect the new port in the MCP client's `TUPPERWARE_URL` and in any firewall
+remember to reflect the new port in the MCP client's `PITHOS_URL` and in any firewall
 rule.
 
 

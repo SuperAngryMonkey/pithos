@@ -1,12 +1,12 @@
 #!/bin/bash
-# Tupperware web UI installer.
-# Sets up the Flask app at /opt/tupperware/ and a systemd service on port 8080.
+# Pithos web UI installer.
+# Sets up the Flask app at /opt/pithos/ and a systemd service on port 8080.
 # Safe to re-run; replaces existing install.
 
 set -euo pipefail
 
-REPO_RAW="${TUPPERWARE_REPO_RAW:-https://raw.githubusercontent.com/SuperAngryMonkey/tupperware/main}"
-INSTALL_DIR="/opt/tupperware"
+REPO_RAW="${PITHOS_REPO_RAW:-https://raw.githubusercontent.com/SuperAngryMonkey/pithos/main}"
+INSTALL_DIR="/opt/pithos"
 PORT="${PORT:-8080}"
 
 if [[ $EUID -ne 0 ]]; then
@@ -14,20 +14,20 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-echo "[*] Tupperware web UI installer"
+echo "[*] Pithos web UI installer"
 echo
 
 # Verify the CLI tools exist (they're called by the web UI)
-if [[ ! -x /usr/local/sbin/tupperware-new ]]; then
-    echo "ERROR: /usr/local/sbin/tupperware-new not found." >&2
+if [[ ! -x /usr/local/sbin/pithos-new ]]; then
+    echo "ERROR: /usr/local/sbin/pithos-new not found." >&2
     echo "       Run scripts/install.sh first." >&2
     exit 1
 fi
 
 # Stop and clean any previous install
-if systemctl is-active --quiet tupperware 2>/dev/null; then
-    echo "[*] Stopping existing tupperware service..."
-    systemctl stop tupperware
+if systemctl is-active --quiet pithos 2>/dev/null; then
+    echo "[*] Stopping existing pithos service..."
+    systemctl stop pithos
 fi
 # Clean up the old name if it was used during early development
 systemctl stop ts-clone-webui 2>/dev/null || true
@@ -56,9 +56,9 @@ fi
 chmod +x "$INSTALL_DIR/app.py"
 
 echo "[*] Writing systemd unit..."
-cat > /etc/systemd/system/tupperware.service <<UNIT_EOF
+cat > /etc/systemd/system/pithos.service <<UNIT_EOF
 [Unit]
-Description=Tupperware - Tailscale LXC provisioner web UI
+Description=Pithos - Tailscale LXC provisioner web UI
 After=network-online.target
 
 [Service]
@@ -74,12 +74,12 @@ WantedBy=multi-user.target
 UNIT_EOF
 
 systemctl daemon-reload
-systemctl enable --now tupperware.service
+systemctl enable --now pithos.service
 sleep 2
 
-if ! systemctl is-active --quiet tupperware; then
-    echo "ERROR: tupperware service failed to start" >&2
-    journalctl -u tupperware -n 20 --no-pager
+if ! systemctl is-active --quiet pithos; then
+    echo "ERROR: pithos service failed to start" >&2
+    journalctl -u pithos -n 20 --no-pager
     exit 1
 fi
 
@@ -87,9 +87,9 @@ LAN_IP=$(ip -4 addr show vmbr0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ 
 [[ -z "$LAN_IP" ]] && LAN_IP="<your-host-ip>"
 
 echo
-echo "[✓] Tupperware web UI running."
+echo "[✓] Pithos web UI running."
 echo
 echo "Access:  http://${LAN_IP}:${PORT}/"
 echo
-echo "Service: systemctl status tupperware"
-echo "Logs:    journalctl -u tupperware -f"
+echo "Service: systemctl status pithos"
+echo "Logs:    journalctl -u pithos -f"

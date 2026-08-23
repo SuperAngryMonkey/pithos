@@ -1,11 +1,11 @@
 #!/bin/bash
-# tupperware-rejoin
+# pithos-rejoin
 # Mints a fresh Tailscale auth key and injects it into a container,
 # then triggers the firstboot service to bring up Tailscale with new identity.
 #
 # Run on the destination host after a transfer with fresh-identity mode.
 #
-# Usage: tupperware-rejoin <vmid>
+# Usage: pithos-rejoin <vmid>
 
 set -euo pipefail
 
@@ -18,7 +18,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 if [[ $# -lt 1 ]]; then
-    echo "Usage: tupperware-rejoin <vmid>" >&2
+    echo "Usage: pithos-rejoin <vmid>" >&2
     exit 1
 fi
 

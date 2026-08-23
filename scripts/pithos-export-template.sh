@@ -1,30 +1,30 @@
 #!/bin/bash
-# tupperware-export-template
-# Exports an existing Tupperware-ready LXC template as a .tar.zst file
+# pithos-export-template
+# Exports an existing Pithos-ready LXC template as a .tar.zst file
 # suitable for uploading to GitHub Releases.
 #
-# Use this on a host where you have a working tupperware-build-template result
+# Use this on a host where you have a working pithos-build-template result
 # to create a portable artifact other users can import.
 #
-# Usage: tupperware-export-template [--vmid <n>] [--output <path>]
+# Usage: pithos-export-template [--vmid <n>] [--output <path>]
 
 set -euo pipefail
 
 VMID="${VMID:-9000}"
-OUTPUT="${OUTPUT:-./tupperware-template.tar.zst}"
+OUTPUT="${OUTPUT:-./pithos-template.tar.zst}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 
 usage() {
     cat >&2 <<USAGE
-Usage: tupperware-export-template [options]
+Usage: pithos-export-template [options]
 
 Options:
   --vmid <n>          VMID of the template to export (default: 9000)
-  --output <path>     Output file path (default: ./tupperware-template.tar.zst)
+  --output <path>     Output file path (default: ./pithos-template.tar.zst)
   -h, --help          Show this help
 
 The output file can be uploaded to GitHub Releases for users to import
-with tupperware-import-template.
+with pithos-import-template.
 USAGE
     exit 1
 }
@@ -57,7 +57,7 @@ if ! pct config "$VMID" | grep -q "^template:.*1"; then
     exit 1
 fi
 
-echo "[*] Tupperware template exporter"
+echo "[*] Pithos template exporter"
 echo "    VMID=$VMID  OUTPUT=$OUTPUT"
 echo
 
@@ -90,6 +90,6 @@ echo "[OK] Exported template to: $OUTPUT"
 echo "     Size: ${SIZE_MB}MB"
 echo
 echo "Next steps:"
-echo "  1. Upload to GitHub Releases as 'tupperware-template.tar.zst'"
+echo "  1. Upload to GitHub Releases as 'pithos-template.tar.zst'"
 echo "     gh release upload <version-tag> $OUTPUT"
-echo "  2. Users can then import with: tupperware-import-template"
+echo "  2. Users can then import with: pithos-import-template"

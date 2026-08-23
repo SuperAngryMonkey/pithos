@@ -1,4 +1,4 @@
-# Contributing to Tupperware
+# Contributing to Pithos
 
 Issues and PRs welcome.
 
@@ -13,7 +13,7 @@ Issues and PRs welcome.
 
 - **Heavy frameworks** — keep the Flask app a single file, no JS bundlers
 - **Complex auth on the web UI** — out of scope for default install. See architecture docs for how to add it externally.
-- **Multi-host support** — Tupperware is single-host by design. If you want a multi-host orchestrator, that's a different project.
+- **Multi-host support** — Pithos is single-host by design. If you want a multi-host orchestrator, that's a different project.
 
 ## Development
 
@@ -41,7 +41,7 @@ When reporting bugs, please include:
 - Proxmox VE version (`pveversion`)
 - Tailscale version on host AND container (`tailscale version`)
 - Output of the failing command
-- Output of `journalctl -u tupperware -n 50`
+- Output of `journalctl -u pithos -n 50`
 - Output of `pct exec <vmid> -- cat /var/log/tailscale-firstboot.log` (if relevant)
 
 ## License

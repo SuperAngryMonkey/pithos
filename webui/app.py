@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
-"""Tupperware v0.2.8 - LXC provisioner + host-to-host transfer.
+"""Pithos v0.3.0 - LXC provisioner + host-to-host transfer.
 
 v0.2.2: optional HTTP Basic Auth covering every route (see AUTH_FILE below).
 v0.2.3: parallel inventory gathering + stale-while-revalidate cache, so the
 dashboard and /api/* stay fast on slow hosts.
 v0.2.4: template + storage-backend checks cached too; every dashboard load is
 now subprocess-free on the request path once warm.
-v0.2.5: TUPPERWARE_BIND env selects the listen address (default 0.0.0.0) so an
+v0.2.5: PITHOS_BIND env selects the listen address (default 0.0.0.0) so an
 instance can be pinned to the tailscale or LAN interface only.
-v0.2.6: TUPPERWARE_ALLOW_SOURCES (admin-selectable, per host) refuses requests
+v0.2.6: PITHOS_ALLOW_SOURCES (admin-selectable, per host) refuses requests
 from outside a CIDR allow list -- for hosts exposed to the internet.
-v0.2.7: TUPPERWARE_DEFAULT_STORAGE selects the default storage backend, and
-TUPPERWARE_HIDE_STORAGES hides backends from the picker (e.g. scratch disks),
+v0.2.7: PITHOS_DEFAULT_STORAGE selects the default storage backend, and
+PITHOS_HIDE_STORAGES hides backends from the picker (e.g. scratch disks),
 both admin-selectable per host.
 v0.2.8: SMART disk health at /api/disks (NVMe + SATA), cached separately via
-TUPPERWARE_DISK_CACHE_TTL.
+PITHOS_DISK_CACHE_TTL.
+v0.3.0: renamed from Tupperware to Pithos (see docs/rename.md). TUPPERWARE_*
+env vars still read as a deprecated fallback.
 """
 import subprocess
 import re
@@ -28,22 +30,32 @@ from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, render_template_string, request, Response, stream_with_context, jsonify
 from werkzeug.security import check_password_hash
 
+
+def _env(name, default=None):
+    """Read PITHOS_<name>, falling back to the pre-0.3.0 TUPPERWARE_<name>.
+
+    The fallback keeps hosts installed before the rename working until their
+    systemd drop-ins are migrated; see docs/rename.md."""
+    return os.environ.get("PITHOS_" + name,
+                          os.environ.get("TUPPERWARE_" + name, default))
+
+
 app = Flask(__name__)
 
-CLONE_SCRIPT = "/usr/local/sbin/tupperware-new"
-TRANSFER_SCRIPT = "/usr/local/sbin/tupperware-transfer"
-DEFAULT_STORAGE = os.environ.get("TUPPERWARE_DEFAULT_STORAGE", "local-lvm")
+CLONE_SCRIPT = "/usr/local/sbin/pithos-new"
+TRANSFER_SCRIPT = "/usr/local/sbin/pithos-transfer"
+DEFAULT_STORAGE = _env("DEFAULT_STORAGE", "local-lvm")
 # Admin-selectable per host: comma-separated storage names to keep out of the
 # provisioning picker (e.g. non-redundant scratch disks). Unset = show all.
 # The default storage is never hidden, even if listed, so provisioning cannot
 # be left with no valid target.
 HIDE_STORAGES = {
-    s.strip() for s in os.environ.get("TUPPERWARE_HIDE_STORAGES", "").split(",") if s.strip()
+    s.strip() for s in _env("HIDE_STORAGES", "").split(",") if s.strip()
 }
 TEMPLATE_VMID = int(os.environ.get("TEMPLATE_VMID", "9000"))
 OAUTH_FILE = "/root/.tailscale/oauth"
-TRANSFER_LOG = "/var/log/tupperware/transfer.log"
-SAMPLE_TEMPLATE_URL = "https://github.com/SuperAngryMonkey/tupperware/releases/latest/download/tupperware-template.tar.zst"
+TRANSFER_LOG = "/var/log/pithos/transfer.log"
+SAMPLE_TEMPLATE_URL = "https://github.com/SuperAngryMonkey/pithos/releases/latest/download/pithos-template.tar.zst"
 
 # Cache for prox-hosts (60s TTL)
 _PROX_HOSTS_CACHE = {"ts": 0, "data": None}
@@ -56,18 +68,18 @@ _PROX_HOSTS_CACHE = {"ts": 0, "data": None}
 # When the file exists, EVERY route (HTML UI, /api/*, /clone-stream,
 # /transfer-stream) requires Basic auth. When it is absent the app runs
 # unauthenticated (pre-v0.2.2 behavior) and logs a warning at startup.
-AUTH_FILE = os.environ.get("TUPPERWARE_AUTH_FILE", "/root/.tupperware/auth")
+AUTH_FILE = _env("AUTH_FILE", "/root/.pithos/auth")
 _AUTH_CACHE = {"mtime": None, "cred": None}
 
 
 # --- Source scoping (v0.2.6) --------------------------------------------
-# Admin-selectable, per host: set TUPPERWARE_ALLOW_SOURCES to a comma-
+# Admin-selectable, per host: set PITHOS_ALLOW_SOURCES to a comma-
 # separated CIDR list (e.g. "127.0.0.0/8,10.0.0.0/24,100.64.0.0/10") and
 # every request from any other source address is refused with 403, before
 # auth runs. Unset (default) = no restriction. Intended for hosts exposed
 # to the internet; hosts behind a perimeter firewall can leave it unset.
 # A malformed CIDR fails at startup (loudly) rather than running open.
-_raw_sources = os.environ.get("TUPPERWARE_ALLOW_SOURCES", "").strip()
+_raw_sources = _env("ALLOW_SOURCES", "").strip()
 ALLOW_SOURCES = (
     [ipaddress.ip_network(s.strip(), strict=False) for s in _raw_sources.split(",") if s.strip()]
     if _raw_sources else None
@@ -103,13 +115,13 @@ def _load_auth():
                 _AUTH_CACHE.update(mtime=st.st_mtime, cred=(user, pwhash))
             else:
                 app.logger.error(
-                    "tupperware: %s is malformed (want user:hash); refusing all requests",
+                    "pithos: %s is malformed (want user:hash); refusing all requests",
                     AUTH_FILE,
                 )
                 _AUTH_CACHE.update(mtime=st.st_mtime, cred=("", ""))
         except OSError as e:
             app.logger.error(
-                "tupperware: cannot read %s (%s); refusing all requests", AUTH_FILE, e
+                "pithos: cannot read %s (%s); refusing all requests", AUTH_FILE, e
             )
             _AUTH_CACHE.update(mtime=None, cred=("", ""))
     return _AUTH_CACHE["cred"]
@@ -134,7 +146,7 @@ def _require_auth():
     return Response(
         "Authentication required.\n",
         401,
-        {"WWW-Authenticate": 'Basic realm="tupperware"'},
+        {"WWW-Authenticate": 'Basic realm="pithos"'},
     )
 
 
@@ -190,7 +202,7 @@ def _list_storage_backends_uncached():
 # for CACHE_TTL seconds and, once expired, refreshed in a background thread
 # while the stale copy is served (stale-while-revalidate) -- so after the
 # first warm-up every response is instant.
-CACHE_TTL = float(os.environ.get("TUPPERWARE_CACHE_TTL", "30"))
+CACHE_TTL = float(_env("CACHE_TTL", "30"))
 _CACHE_LOCK = threading.Lock()
 _CACHES = {}
 
@@ -498,16 +510,16 @@ body{padding:20px;max-width:1400px;margin:0 auto;}
 
 
 # Setup page (template not found) — same as v0.1.5
-SETUP_PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><title>TUPPERWARE SETUP</title>
+SETUP_PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS SETUP</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>""" + SHARED_STYLE + r""" .setup-banner{background:var(--c2);border:1px solid var(--acc2);padding:24px;margin-bottom:20px;} .setup-title{font-family:var(--fdisplay);font-size:28px;letter-spacing:3px;color:var(--acc2);margin-bottom:8px;}</style></head><body>
-<div class="hdr"><div class="hdr-left"><div class="logo">TUPPERWARE</div><div class="subtitle">SETUP REQUIRED // {{ hostname }}</div></div><div class="hdr-right"><div class="status-dot warn"></div><div class="status-txt warn">SETUP REQUIRED</div></div></div>
-<div class="setup-banner"><div class="setup-title">NO TEMPLATE FOUND</div><div>Tupperware needs an LXC template at VMID {{ template_vmid }}.</div></div>
-<div class="panel"><div class="panel-title">RUN ONE OF:</div><pre style="color:var(--acc3);font-size:13px;padding:12px;">tupperware-import-template   # easiest, ~2 min
-tupperware-build-template    # build from scratch, ~4 min</pre></div></body></html>"""
+<div class="hdr"><div class="hdr-left"><div class="logo">PITHOS</div><div class="subtitle">SETUP REQUIRED // {{ hostname }}</div></div><div class="hdr-right"><div class="status-dot warn"></div><div class="status-txt warn">SETUP REQUIRED</div></div></div>
+<div class="setup-banner"><div class="setup-title">NO TEMPLATE FOUND</div><div>Pithos needs an LXC template at VMID {{ template_vmid }}.</div></div>
+<div class="panel"><div class="panel-title">RUN ONE OF:</div><pre style="color:var(--acc3);font-size:13px;padding:12px;">pithos-import-template   # easiest, ~2 min
+pithos-build-template    # build from scratch, ~4 min</pre></div></body></html>"""
 
 
-INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>TUPPERWARE</title>
+INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>""" + SHARED_STYLE + r"""
 .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
@@ -553,7 +565,7 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>TUPPERWARE</
 .hist-table td{padding:8px;border-bottom:var(--border-subtle);}
 .hist-status.success{color:var(--acc3);} .hist-status.failed{color:var(--danger);} .hist-status.partial{color:var(--acc2);}
 </style></head><body>
-<div class="hdr"><div class="hdr-left"><div class="logo">TUPPERWARE</div><div class="subtitle">LXC PROVISIONER // {{ m.hostname }}</div></div>
+<div class="hdr"><div class="hdr-left"><div class="logo">PITHOS</div><div class="subtitle">LXC PROVISIONER // {{ m.hostname }}</div></div>
 <div class="hdr-right"><div class="clock" id="clock">--:--:--</div><div class="status-dot"></div><div class="status-txt">OPERATIONAL</div></div></div>
 
 <div class="metrics">
@@ -741,7 +753,7 @@ def api_dest_storage():
 
 @app.route("/api/status")
 def api_status():
-    """Read-only host status as JSON (for the Tupperware MCP / scripted clients)."""
+    """Read-only host status as JSON (for the Pithos MCP / scripted clients)."""
     return jsonify({
         **host_metrics(),
         "storages": list_storage_backends(),
@@ -752,7 +764,7 @@ def api_status():
 
 @app.route("/api/containers")
 def api_containers():
-    """Read-only container inventory as JSON (for the Tupperware MCP / scripted clients)."""
+    """Read-only container inventory as JSON (for the Pithos MCP / scripted clients)."""
     return jsonify({"containers": list_containers()})
 
 
@@ -849,7 +861,7 @@ def transfer_stream():
 # --- Disk health (v0.2.8) -----------------------------------------------
 # SMART data for the host's physical disks. smartctl is slow and the data
 # moves slowly, so this gets its own long TTL on the same SWR cache.
-DISK_CACHE_TTL = float(os.environ.get("TUPPERWARE_DISK_CACHE_TTL", "600"))
+DISK_CACHE_TTL = float(_env("DISK_CACHE_TTL", "600"))
 
 # Vendor-specific SATA attribute IDs that carry a normalized life-left value
 # (100 = new, counts down). NVMe reports percentage_used directly instead.
@@ -999,11 +1011,11 @@ def list_disks():
 if __name__ == "__main__":
     if _load_auth() is None:
         app.logger.warning(
-            "tupperware: no auth file at %s - web UI is UNAUTHENTICATED "
+            "pithos: no auth file at %s - web UI is UNAUTHENTICATED "
             "(create it to require HTTP Basic Auth on all routes)",
             AUTH_FILE,
         )
     # Warm the inventory caches so the first request is already fast.
     threading.Thread(target=lambda: (host_metrics(), list_containers(), template_exists(), list_storage_backends()), daemon=True).start()
-    app.run(host=os.environ.get("TUPPERWARE_BIND", "0.0.0.0"),
+    app.run(host=_env("BIND", "0.0.0.0"),
             port=int(os.environ.get("PORT", 8080)), threaded=True)

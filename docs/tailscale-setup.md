@@ -65,7 +65,7 @@ Add to your policy file. This says: "any user in this tailnet can connect to any
 
 ## Step 4 — (Recommended) Create a Tailscale SSH grant
 
-Tupperware enables Tailscale SSH on every cloned container. To actually use it (`tailscale ssh root@hostname`), add an SSH grant:
+Pithos enables Tailscale SSH on every cloned container. To actually use it (`tailscale ssh root@hostname`), add an SSH grant:
 
 ```hujson
 "ssh": [
@@ -88,7 +88,7 @@ The container is on the tailnet either way — only `tailscale ssh` is gated by 
 
 ## Step 5 — Create the OAuth client
 
-This is the one piece that lets Tupperware mint fresh auth keys without storing a long-lived secret on the Proxmox host.
+This is the one piece that lets Pithos mint fresh auth keys without storing a long-lived secret on the Proxmox host.
 
 ### Where to find it
 
@@ -101,7 +101,7 @@ In the admin console:
 
 ### Step 1 of the dialog: Settings
 
-- **Description**: `Tupperware provisioner` (or anything that helps future-you remember what this is)
+- **Description**: `Pithos provisioner` (or anything that helps future-you remember what this is)
 - **Tags**: `tag:lxc` — this is the safety boundary. The credential can only mint keys for `tag:lxc` devices, nothing else. **Do not skip this.**
 
 Click **Continue**.
@@ -166,7 +166,7 @@ cat /root/.tailscale/oauth
 
 ## You're done
 
-Tailscale is now configured to accept Tupperware's automated container provisioning. You can now proceed with the Tupperware install (back to the [main README](../README.md), Step 2 onward).
+Tailscale is now configured to accept Pithos's automated container provisioning. You can now proceed with the Pithos install (back to the [main README](../README.md), Step 2 onward).
 
 ---
 
@@ -174,7 +174,7 @@ Tailscale is now configured to accept Tupperware's automated container provision
 
 **OAuth credentials never expire.** Unlike auth keys (which are 90-day max), OAuth client credentials are durable. You only need to rotate them if you suspect they've leaked or you want to revoke access.
 
-**Each minted auth key is single-use, 10-minute TTL, and tagged.** Tupperware mints a fresh key for every container clone. The key is wiped from the container after `tailscale up` succeeds. No long-lived auth material lives on your containers.
+**Each minted auth key is single-use, 10-minute TTL, and tagged.** Pithos mints a fresh key for every container clone. The key is wiped from the container after `tailscale up` succeeds. No long-lived auth material lives on your containers.
 
 **Least privilege.** The OAuth client only has `Auth Keys: Write` scope and is restricted to `tag:lxc`. If the secret leaks, the worst an attacker can do is spin up tag:lxc devices on your tailnet. Your tailnet ACLs constrain what those devices can reach.
 

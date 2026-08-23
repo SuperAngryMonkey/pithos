@@ -1,21 +1,21 @@
 #!/bin/bash
-# tupperware-transfer
+# pithos-transfer
 # Cold-migrate an LXC container from this Proxmox host to another over Tailscale.
 #
 # Usage:
-#   tupperware-transfer <vmid> <dest-fqdn> [--storage <name>] [--preserve-identity]
+#   pithos-transfer <vmid> <dest-fqdn> [--storage <name>] [--preserve-identity]
 #
 # Examples:
-#   tupperware-transfer 200 proxmox.tailnet-example.ts.net
-#   tupperware-transfer 201 proxmox.tailnet-example.ts.net --storage local-zfs
-#   tupperware-transfer 202 proxmox.tailnet-example.ts.net --preserve-identity
+#   pithos-transfer 200 proxmox.tailnet-example.ts.net
+#   pithos-transfer 201 proxmox.tailnet-example.ts.net --storage local-zfs
+#   pithos-transfer 202 proxmox.tailnet-example.ts.net --preserve-identity
 #
 # Behavior:
 #   1. Stops the source container (if running)
 #   2. vzdumps it to a temporary file
 #   3. SCPs the dump to the destination's /var/lib/vz/dump
 #   4. SSHs to destination and runs pct restore on chosen storage
-#   5. If --preserve-identity NOT set (default): runs tupperware-rejoin on dest
+#   5. If --preserve-identity NOT set (default): runs pithos-rejoin on dest
 #      to mint a fresh OAuth key and re-join tailnet with new identity
 #   6. Starts the container on the destination
 #   7. Writes a JSON audit log entry
@@ -26,13 +26,13 @@
 
 set -euo pipefail
 
-LOG_DIR="/var/log/tupperware"
+LOG_DIR="/var/log/pithos"
 LOG_FILE="${LOG_DIR}/transfer.log"
 DEFAULT_STORAGE="local-lvm"
 
 usage() {
     cat >&2 <<USAGE
-Usage: tupperware-transfer <vmid> <dest-fqdn> [options]
+Usage: pithos-transfer <vmid> <dest-fqdn> [options]
 
 Arguments:
   vmid          Source LXC VMID on this host
@@ -149,11 +149,11 @@ if ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -o BatchMode=ye
     exit 1
 fi
 
-# Verify destination has Tupperware installed
-if ! ssh -o BatchMode=yes root@"$DEST_FQDN" "command -v tupperware-new" >/dev/null 2>&1; then
-    echo "ERROR: Destination does not have Tupperware installed." >&2
-    echo "       Install Tupperware on $DEST_FQDN first." >&2
-    log_audit "failed" "null" "Destination missing Tupperware"
+# Verify destination has Pithos installed
+if ! ssh -o BatchMode=yes root@"$DEST_FQDN" "command -v pithos-new" >/dev/null 2>&1; then
+    echo "ERROR: Destination does not have Pithos installed." >&2
+    echo "       Install Pithos on $DEST_FQDN first." >&2
+    log_audit "failed" "null" "Destination missing Pithos"
     exit 1
 fi
 
@@ -212,7 +212,7 @@ DUMP_DIR="/var/lib/vz/dump"
 mkdir -p "$DUMP_DIR"
 
 # Clean any old dump file for this VMID
-rm -f "$DUMP_DIR/vzdump-lxc-${VMID}-tupperware-transfer.tar.zst"
+rm -f "$DUMP_DIR/vzdump-lxc-${VMID}-pithos-transfer.tar.zst"
 
 # vzdump with zstd, mode stop (already stopped)
 if ! vzdump "$VMID" --mode stop --compress zstd --dumpdir "$DUMP_DIR" 2>&1 | grep -v '^INFO:' || true; then
@@ -230,7 +230,7 @@ if [[ -z "$DUMP_FILE" || ! -f "$DUMP_FILE" ]]; then
 fi
 
 # Rename to a predictable name
-TRANSFER_FILE="$DUMP_DIR/vzdump-lxc-${VMID}-tupperware-transfer.tar.zst"
+TRANSFER_FILE="$DUMP_DIR/vzdump-lxc-${VMID}-pithos-transfer.tar.zst"
 mv "$DUMP_FILE" "$TRANSFER_FILE"
 
 TRANSFER_SIZE=$(stat -c %s "$TRANSFER_FILE")
@@ -238,7 +238,7 @@ SIZE_MB=$((TRANSFER_SIZE / 1024 / 1024))
 echo "    Dump size: ${SIZE_MB}MB"
 
 # ---- SCP to destination ----
-REMOTE_FILE="/var/lib/vz/dump/vzdump-lxc-${VMID}-tupperware-transfer.tar.zst"
+REMOTE_FILE="/var/lib/vz/dump/vzdump-lxc-${VMID}-pithos-transfer.tar.zst"
 echo "[*] Transferring to $DEST_FQDN..."
 
 # Make sure remote dump dir exists
@@ -278,10 +278,10 @@ ssh -o BatchMode=yes root@"$DEST_FQDN" "rm -f $REMOTE_FILE" 2>/dev/null || true
 
 # ---- Inject auth key for fresh identity mode ----
 if [[ $PRESERVE_IDENTITY -eq 0 ]]; then
-    echo "[*] Triggering tupperware-rejoin on destination..."
-    if ! ssh -o BatchMode=yes root@"$DEST_FQDN" "tupperware-rejoin $DEST_VMID"; then
-        echo "WARNING: tupperware-rejoin failed. Container restored but may not join tailnet automatically." >&2
-        echo "         You can re-run manually: ssh root@$DEST_FQDN tupperware-rejoin $DEST_VMID" >&2
+    echo "[*] Triggering pithos-rejoin on destination..."
+    if ! ssh -o BatchMode=yes root@"$DEST_FQDN" "pithos-rejoin $DEST_VMID"; then
+        echo "WARNING: pithos-rejoin failed. Container restored but may not join tailnet automatically." >&2
+        echo "         You can re-run manually: ssh root@$DEST_FQDN pithos-rejoin $DEST_VMID" >&2
     fi
 fi
 
