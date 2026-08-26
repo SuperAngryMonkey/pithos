@@ -55,6 +55,34 @@ matching `PITHOS_*` variable is unset, so a host installed before the rename
 keeps working until its systemd drop-in is migrated. This fallback is
 deprecated and will be removed in a future release — migrate your drop-ins.
 
+## Don't forget the MCP client
+
+The rename moves the MCP server's path *and* filename, so any MCP client
+config still pointing at the old location will fail to start the server
+entirely — the environment fallback does not help here, because the process
+never launches.
+
+In `claude_desktop_config.json` (and `~/.claude.json` for Claude Code):
+
+```json
+"pithos": {
+  "command": "/path/to/pithos/mcp/.venv/bin/python",
+  "args": ["/path/to/pithos/mcp/pithos_mcp.py"],
+  "env": {
+    "PITHOS_URL": "http://<host>:8080",
+    "PITHOS_USER": "admin",
+    "PITHOS_PASS": "<password>"
+  }
+}
+```
+
+Rename the server key from `tupperware` to `pithos`, update `command` and
+`args` to the new paths, and rename the `TUPPERWARE_*` env keys. Restart the
+client afterwards — these configs are read at launch.
+
+If you renamed the checkout directory too, the existing virtualenv keeps
+working; it does not need rebuilding.
+
 Release notes for versions up to v0.2.8 are left under the old name on
 purpose: they document what those versions actually shipped, and rewriting
 them would make them false.
