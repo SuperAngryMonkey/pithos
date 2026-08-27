@@ -3,7 +3,7 @@
 # Clones the Pithos template, mints a fresh OAuth-based auth key,
 # injects it into the new container, and triggers the firstboot service.
 #
-# Usage: pithos-new <new-vmid> <hostname> [--storage <name>]
+# Usage: pithos-new <new-vmid> <hostname> [--storage <name>] [--no-onboot]
 #
 # Examples:
 #   pithos-new 201 lab-lxc-01
@@ -19,11 +19,13 @@ TEMPLATE_VMID="${TEMPLATE_VMID:-9000}"
 OAUTH_FILE="${OAUTH_FILE:-/root/.tailscale/oauth}"
 TAG="${TAG:-tag:lxc}"
 STORAGE="${STORAGE:-local-lvm}"
+# Start the container when the host boots. On by default.
+ONBOOT="${ONBOOT:-1}"
 NETWORK_WAIT_RETRIES="${NETWORK_WAIT_RETRIES:-150}"
 
 usage() {
     cat >&2 <<USAGE
-Usage: pithos-new <new-vmid> <hostname> [--storage <name>]
+Usage: pithos-new <new-vmid> <hostname> [--storage <name>] [--no-onboot]
 
 Arguments:
   new-vmid    VMID for the new container (e.g., 201)
@@ -51,6 +53,14 @@ while [[ $# -gt 0 ]]; do
         --storage)
             STORAGE="$2"
             shift 2
+            ;;
+        --onboot)
+            ONBOOT=1
+            shift
+            ;;
+        --no-onboot)
+            ONBOOT=0
+            shift
             ;;
         --storage=*)
             STORAGE="${1#--storage=}"
@@ -164,6 +174,15 @@ fi
 # Clone
 echo "[*] Cloning $TEMPLATE_VMID -> $NEW_VMID ($NEW_HOST) on storage '$STORAGE'..."
 pct clone "$TEMPLATE_VMID" "$NEW_VMID" --hostname "$NEW_HOST" --storage "$STORAGE" --full 1
+
+# Start on host boot. Defaults to on: a container that silently stays down
+# after a power cut is almost never what anyone wants.
+pct set "$NEW_VMID" --onboot "$ONBOOT"
+if [[ "$ONBOOT" == "1" ]]; then
+    echo "[*] onboot enabled - will start automatically after a host reboot"
+else
+    echo "[!] onboot DISABLED - this container will NOT start after a host reboot"
+fi
 
 echo "[*] Starting container..."
 pct start "$NEW_VMID"

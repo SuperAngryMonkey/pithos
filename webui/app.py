@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pithos v0.3.0 - LXC provisioner + host-to-host transfer.
+"""Pithos v0.3.1 - LXC provisioner + host-to-host transfer.
 
 v0.2.2: optional HTTP Basic Auth covering every route (see AUTH_FILE below).
 v0.2.3: parallel inventory gathering + stale-while-revalidate cache, so the
@@ -17,6 +17,8 @@ v0.2.8: SMART disk health at /api/disks (NVMe + SATA), cached separately via
 PITHOS_DISK_CACHE_TTL.
 v0.3.0: renamed from Tupperware to Pithos (see docs/rename.md). TUPPERWARE_*
 env vars still read as a deprecated fallback.
+v0.3.1: onboot is set explicitly on provisioning (default on) and surfaced in
+the inventory, so containers restart after a power loss.
 """
 import subprocess
 import re
@@ -325,6 +327,7 @@ def _gather_container(parts):
             "disk": disk_size, "storage": container_storage(cfg),
             "lan_ip": lan_ip, "ts_ip": ts_ip,
             "description": desc, "tags": cfg.get("tags", ""),
+            "onboot": cfg.get("onboot", "0") == "1",
         }
     except Exception:
         return None
@@ -590,6 +593,14 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS</titl
     </select></div>
     <div><label class="form-label">ROOT PASSWORD (OPTIONAL)</label><input class="form-input" type="password" name="rootpw" placeholder="leave blank for tailscale ssh only" autocomplete="new-password"></div>
   </div>
+  <div class="form-grid row2">
+    <div><label class="form-label">START AT BOOT</label>
+      <label style="display:flex;align-items:center;gap:8px;padding-top:6px">
+        <input type="checkbox" name="onboot" value="1" checked>
+        <span style="font-size:12px;opacity:.8">start automatically when the host powers on</span>
+      </label>
+    </div>
+  </div>
   <div class="btn-row"><button class="btn" type="submit" id="submit-btn">CLONE &amp; JOIN TAILNET</button></div>
 </form></div>
 
@@ -604,7 +615,7 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS</titl
 {% for c in containers %}<tr>
 <td class="inv-vmid">{{ c.vmid }}</td>
 <td class="inv-name">{{ c.name }}</td>
-<td><span class="inv-status {{ c.status }}">{{ c.status }}</span></td>
+<td><span class="inv-status {{ c.status }}">{{ c.status }}</span>{% if not c.onboot %} <span class="inv-status stopped" title="This container will NOT start after a host reboot">NO BOOT</span>{% endif %}</td>
 <td>{{ c.cores }}c / {{ c.memory }}MB / {{ c.disk }}</td>
 <td class="inv-storage">{{ c.storage or '—' }}</td>
 <td class="inv-ip">{% if c.lan_ip %}{{ c.lan_ip }}<br>{% endif %}{% if c.ts_ip %}<span class="inv-ip-ts">{{ c.ts_ip }}</span>{% endif %}</td>
@@ -789,13 +800,16 @@ def clone_stream():
     disk = request.form.get("disk", "").strip()
     rootpw = request.form.get("rootpw", "")
     storage = request.form.get("storage", "").strip() or DEFAULT_STORAGE
+    # Unchecked checkboxes are simply absent from the form post.
+    onboot = "1" if request.form.get("onboot") else "0"
     if not re.match(r"^[a-zA-Z0-9_\-]+$", storage):
         return Response("[!] Invalid storage.\n", mimetype="text/plain")
 
     def generate():
         yield "[*] Cloning " + hostname + " as VMID " + str(vmid_int) + "\n"
         try:
-            proc = subprocess.Popen([CLONE_SCRIPT, str(vmid_int), hostname, "--storage", storage],
+            proc = subprocess.Popen([CLONE_SCRIPT, str(vmid_int), hostname, "--storage", storage,
+                                     "--onboot" if onboot == "1" else "--no-onboot"],
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
             for line in iter(proc.stdout.readline, ""): yield line
             proc.wait()
