@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pithos v0.3.1 - LXC provisioner + host-to-host transfer.
+"""Pithos v0.4.0 - LXC provisioner + host-to-host transfer.
 
 v0.2.2: optional HTTP Basic Auth covering every route (see AUTH_FILE below).
 v0.2.3: parallel inventory gathering + stale-while-revalidate cache, so the
@@ -19,6 +19,9 @@ v0.3.0: renamed from Tupperware to Pithos (see docs/rename.md). TUPPERWARE_*
 env vars still read as a deprecated fallback.
 v0.3.1: onboot is set explicitly on provisioning (default on) and surfaced in
 the inventory, so containers restart after a power loss.
+v0.4.0: template choice - templates are enumerated (LXC and VM), exposed at
+/api/templates, and selectable in the clone form. VM templates are listed but
+not yet provisionable.
 """
 import subprocess
 import re
@@ -166,6 +169,62 @@ def _template_exists_uncached():
         pass
     return False
 
+
+
+def _list_templates_uncached():
+    """Every template on this host, LXC and VM, newest VMID last.
+
+    kind is 'lxc' or 'vm' and decides which clone path provisioning uses:
+    pct clone + pct exec for lxc, qm clone + cloud-init for vm.
+    """
+    out = []
+
+    try:
+        raw = subprocess.check_output(["pct", "list"], text=True, timeout=5)
+        for line in raw.strip().split("\n")[1:]:
+            parts = line.split(None, 3)
+            if len(parts) < 3:
+                continue
+            vmid = parts[0]
+            cfg = parse_pct_config(vmid)
+            if cfg.get("template") != "1":
+                continue
+            out.append({"vmid": vmid, "kind": "lxc",
+                        "name": cfg.get("hostname", parts[2]),
+                        "os": "debian", "notes": cfg.get("description", "")[:120]})
+    except Exception:
+        pass
+
+    try:
+        raw = subprocess.check_output(["qm", "list"], text=True, timeout=10)
+        for line in raw.strip().split("\n")[1:]:
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            vmid = parts[0]
+            try:
+                cfg = subprocess.check_output(["qm", "config", vmid], text=True, timeout=10)
+            except Exception:
+                continue
+            conf = {}
+            for ln in cfg.split("\n"):
+                if ":" in ln:
+                    k, v = ln.split(":", 1)
+                    conf[k.strip()] = v.strip()
+            if conf.get("template") != "1":
+                continue
+            out.append({"vmid": vmid, "kind": "vm",
+                        "name": conf.get("name", parts[1]),
+                        "os": conf.get("ostype", "?"),
+                        "notes": conf.get("description", "")[:120]})
+    except Exception:
+        pass
+
+    return sorted(out, key=lambda t: int(t["vmid"]))
+
+
+def list_templates():
+    return _swr("templates", _list_templates_uncached)
 
 def next_free_vmid(start=200):
     used = set()
@@ -588,6 +647,13 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS</titl
     <div><label class="form-label">DISK GB</label><input class="form-input" type="number" name="disk" placeholder="4"></div>
   </div>
   <div class="form-grid row2">
+    <div><label class="form-label">TEMPLATE</label><select class="form-select" name="template">
+      {% for t in templates %}
+      <option value="{{ t.vmid }}"{% if t.kind != 'lxc' %} disabled{% endif %}{% if t.vmid == default_template %} selected{% endif %}>
+        {{ t.vmid }} - {{ t.name }} ({{ t.kind }}{% if t.kind != 'lxc' %}, not yet supported{% endif %})
+      </option>
+      {% endfor %}
+    </select></div>
     <div><label class="form-label">STORAGE BACKEND</label><select class="form-select" name="storage">
       {% for s in storages %}<option value="{{ s.name }}"{% if s.name == default_storage %} selected{% endif %}>{{ s.name }} ({{ s.type }})</option>{% endfor %}
     </select></div>
@@ -748,6 +814,7 @@ def index():
     return render_template_string(INDEX,
         m=host_metrics(), containers=list_containers(),
         storages=list_storage_backends(), default_storage=DEFAULT_STORAGE,
+        templates=list_templates(), default_template=str(TEMPLATE_VMID),
         history=transfer_history())
 
 
@@ -785,6 +852,12 @@ def api_disks():
     return jsonify({"disks": list_disks()})
 
 
+@app.route("/api/templates")
+def api_templates():
+    """Templates available on this host, LXC and VM (MCP / scripted clients)."""
+    return jsonify({"templates": list_templates()})
+
+
 @app.route("/clone-stream", methods=["POST"])
 def clone_stream():
     if not template_exists():
@@ -802,6 +875,15 @@ def clone_stream():
     storage = request.form.get("storage", "").strip() or DEFAULT_STORAGE
     # Unchecked checkboxes are simply absent from the form post.
     onboot = "1" if request.form.get("onboot") else "0"
+    template = request.form.get("template", "").strip() or str(TEMPLATE_VMID)
+    # Never trust the form: the picker disables VM templates, but a crafted post
+    # could still send one, and pct clone would fail in a confusing way.
+    _known = {t["vmid"]: t for t in list_templates()}
+    if template not in _known:
+        return Response("[!] Unknown template " + template + "\n", mimetype="text/plain")
+    if _known[template]["kind"] != "lxc":
+        return Response("[!] Template " + template + " is a VM template. "
+                        "VM provisioning is not supported yet.\n", mimetype="text/plain")
     if not re.match(r"^[a-zA-Z0-9_\-]+$", storage):
         return Response("[!] Invalid storage.\n", mimetype="text/plain")
 
@@ -809,7 +891,8 @@ def clone_stream():
         yield "[*] Cloning " + hostname + " as VMID " + str(vmid_int) + "\n"
         try:
             proc = subprocess.Popen([CLONE_SCRIPT, str(vmid_int), hostname, "--storage", storage,
-                                     "--onboot" if onboot == "1" else "--no-onboot"],
+                                     "--onboot" if onboot == "1" else "--no-onboot",
+                                     "--template", template],
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
             for line in iter(proc.stdout.readline, ""): yield line
             proc.wait()

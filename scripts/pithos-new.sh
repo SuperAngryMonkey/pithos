@@ -3,7 +3,7 @@
 # Clones the Pithos template, mints a fresh OAuth-based auth key,
 # injects it into the new container, and triggers the firstboot service.
 #
-# Usage: pithos-new <new-vmid> <hostname> [--storage <name>] [--no-onboot]
+# Usage: pithos-new <new-vmid> <hostname> [--storage <name>] [--template <vmid>] [--no-onboot]
 #
 # Examples:
 #   pithos-new 201 lab-lxc-01
@@ -25,7 +25,7 @@ NETWORK_WAIT_RETRIES="${NETWORK_WAIT_RETRIES:-150}"
 
 usage() {
     cat >&2 <<USAGE
-Usage: pithos-new <new-vmid> <hostname> [--storage <name>] [--no-onboot]
+Usage: pithos-new <new-vmid> <hostname> [--storage <name>] [--template <vmid>] [--no-onboot]
 
 Arguments:
   new-vmid    VMID for the new container (e.g., 201)
@@ -53,6 +53,14 @@ while [[ $# -gt 0 ]]; do
         --storage)
             STORAGE="$2"
             shift 2
+            ;;
+        --template)
+            TEMPLATE_VMID="$2"
+            shift 2
+            ;;
+        --template=*)
+            TEMPLATE_VMID="${1#--template=}"
+            shift
             ;;
         --onboot)
             ONBOOT=1
