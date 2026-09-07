@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pithos v0.7.1 - LXC and VM provisioner + host-to-host transfer.
+"""Pithos v0.8.1 - LXC and VM provisioner + host-to-host transfer.
 
 v0.2.2: optional HTTP Basic Auth covering every route (see AUTH_FILE below).
 v0.2.3: parallel inventory gathering + stale-while-revalidate cache, so the
@@ -32,6 +32,9 @@ shows a resource card per host. Peers are contacted over the tailnet only -
 an address outside 100.64.0.0/10 is refused at startup.
 v0.7.1: per-peer mesh credentials (user:pass@host:port), so a host that
 keeps its own credential does not force the mesh onto one shared password.
+v0.8.0: Windows templates are built from the user's own ISO rather than
+distributed; install generates a credential instead of running open.
+v0.8.1: light theme matching Clio, with a header toggle.
 """
 import subprocess
 import re
