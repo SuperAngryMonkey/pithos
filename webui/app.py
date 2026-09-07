@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pithos v0.6.0 - LXC and VM provisioner + host-to-host transfer.
+"""Pithos v0.7.0 - LXC and VM provisioner + host-to-host transfer.
 
 v0.2.2: optional HTTP Basic Auth covering every route (see AUTH_FILE below).
 v0.2.3: parallel inventory gathering + stale-while-revalidate cache, so the
@@ -27,10 +27,17 @@ plus a cloud-init drive) instead of pithos-new (pct clone plus pct exec).
 v0.6.0: network bridge selection. Bridges are enumerated and flagged public
 or private, so a clone is placed deliberately instead of inheriting the
 template's - which on a host with a public bridge put guests on the internet.
+v0.7.0: mesh view. PITHOS_PEERS lists other Pithos hosts and the dashboard
+shows a resource card per host. Peers are contacted over the tailnet only -
+an address outside 100.64.0.0/10 is refused at startup.
 """
 import subprocess
 import re
 import ipaddress
+import socket
+import base64
+import urllib.request
+import urllib.error
 import os
 import json
 import time
@@ -60,6 +67,11 @@ DEFAULT_STORAGE = _env("DEFAULT_STORAGE", "local-lvm")
 # provisioning picker (e.g. non-redundant scratch disks). Unset = show all.
 # The default storage is never hidden, even if listed, so provisioning cannot
 # be left with no valid target.
+# Mesh: peers to show alongside this host. Comma-separated host or host:port.
+# Must be tailnet addresses - see _parse_peers.
+MESH_USER = _env("MESH_USER", "") or _env("PEER_USER", "")
+MESH_PASS = _env("MESH_PASS", "") or _env("PEER_PASS", "")
+MESH_CACHE_TTL = float(_env("MESH_CACHE_TTL", "20"))
 HIDE_STORAGES = {
     s.strip() for s in _env("HIDE_STORAGES", "").split(",") if s.strip()
 }
@@ -190,6 +202,90 @@ def _is_private(ip):
         return True
     return a.is_private or a.is_loopback or a.is_link_local
 
+
+
+# --- Mesh (v0.7.0) --------------------------------------------------------
+# Peers are other Pithos hosts. Traffic to them goes over the tailnet ONLY:
+# a peer address must resolve into 100.64.0.0/10 or it is refused at startup.
+# That keeps host-to-host traffic on an authenticated, encrypted transport and
+# off any public interface.
+TAILNET = ipaddress.ip_network("100.64.0.0/10")
+MESH_TIMEOUT = float(_env("MESH_TIMEOUT", "6"))
+
+
+def _peer_is_tailnet(host):
+    """True only if every address the name resolves to sits in the tailnet."""
+    try:
+        infos = socket.getaddrinfo(host, None, socket.AF_INET)
+    except Exception:
+        return False
+    addrs = {i[4][0] for i in infos}
+    if not addrs:
+        return False
+    return all(ipaddress.ip_address(a) in TAILNET for a in addrs)
+
+
+def _parse_peers():
+    """PITHOS_PEERS: comma-separated host or host:port entries.
+
+    Non-tailnet peers are dropped with a logged error rather than silently
+    contacted over another path.
+    """
+    raw = _env("PEERS", "").strip()
+    peers = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        host, _, port = item.partition(":")
+        if not _peer_is_tailnet(host):
+            app.logger.error(
+                "pithos: peer %r is not a tailnet address - refusing to use it. "
+                "Peers must resolve into 100.64.0.0/10.", item)
+            continue
+        peers.append({"host": host, "port": int(port) if port else 8080})
+    return peers
+
+
+PEERS = _parse_peers()
+
+
+def _peer_status(peer):
+    """Fetch one peer's /api/status. Never raises: a down peer is a card that
+    says so, not a broken dashboard."""
+    url = "http://%s:%d/api/status" % (peer["host"], peer["port"])
+    card = {"host": peer["host"], "port": peer["port"], "url": url,
+            "reachable": False, "error": ""}
+    try:
+        req = urllib.request.Request(url)
+        if MESH_USER:
+            tok = base64.b64encode(("%s:%s" % (MESH_USER, MESH_PASS)).encode()).decode()
+            req.add_header("Authorization", "Basic " + tok)
+        with urllib.request.urlopen(req, timeout=MESH_TIMEOUT) as r:
+            card.update(json.loads(r.read().decode()))
+            card["reachable"] = True
+    except urllib.error.HTTPError as e:
+        card["error"] = "HTTP %s%s" % (e.code, " - check mesh credentials" if e.code == 401 else "")
+    except Exception as e:
+        card["error"] = str(e)[:120]
+    return card
+
+
+def _mesh_uncached():
+    """This host first, then each peer. Reported in configuration order."""
+    cards = []
+    me = dict(host_metrics())
+    me.update({"host": me.get("hostname", "this host"), "reachable": True,
+               "self": True, "error": ""})
+    cards.append(me)
+    if PEERS:
+        with ThreadPoolExecutor(max_workers=min(8, len(PEERS))) as ex:
+            cards.extend(ex.map(_peer_status, PEERS))
+    return cards
+
+
+def mesh_status():
+    return _swr("mesh", _mesh_uncached, ttl=MESH_CACHE_TTL)
 
 def _list_bridges_uncached():
     """Bridges on this host, with their address and whether it is public.
@@ -387,8 +483,45 @@ def _host_metrics_uncached():
         ts_self = "offline"; ts_peers = "?"
     try: hostname = subprocess.check_output(["hostname"], text=True).strip()
     except Exception: hostname = "proxmox"
+    # Resource figures, for the mesh cards and any capacity check.
+    cores = 0
+    mem_total = mem_avail = 0
+    try:
+        cores = os.cpu_count() or 0
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    mem_total = int(line.split()[1]) * 1024
+                elif line.startswith("MemAvailable:"):
+                    mem_avail = int(line.split()[1]) * 1024
+    except Exception:
+        pass
+
+    load1 = 0.0
+    try:
+        load1 = os.getloadavg()[0]
+    except Exception:
+        pass
+
+    # Free space on the default storage - the one provisioning actually uses.
+    store_total = store_avail = 0
+    try:
+        out = subprocess.check_output(["pvesm", "status"], text=True, timeout=10)
+        for line in out.strip().split("\n")[1:]:
+            f = line.split()
+            if len(f) >= 6 and f[0] == DEFAULT_STORAGE:
+                store_total = int(f[3]) * 1024
+                store_avail = int(f[5]) * 1024
+                break
+    except Exception:
+        pass
+
     return {"ct_count": ct_count, "vm_count": vm_count, "ts_self": ts_self, "ts_peers": ts_peers,
-            "hostname": hostname, "next_vmid": next_free_vmid()}
+            "hostname": hostname, "next_vmid": next_free_vmid(),
+            "cores": cores, "load1": round(load1, 2),
+            "mem_total": mem_total, "mem_avail": mem_avail,
+            "store_name": DEFAULT_STORAGE,
+            "store_total": store_total, "store_avail": store_avail}
 
 
 def host_metrics():
@@ -701,6 +834,29 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS</titl
   <div class="metric blue"><div class="metric-label">NEXT VMID</div><div class="metric-val">{{ m.next_vmid }}</div><div class="metric-sub">auto-pick</div></div>
 </div>
 
+<div class="panel">
+  <div class="panel-hdr"><div class="panel-title">MESH</div>
+    <div class="panel-badge idle">{{ mesh|length }} HOST{{ '' if mesh|length == 1 else 'S' }}</div></div>
+  <div class="metrics">
+  {% for h in mesh %}
+    <div class="metric {{ 'green' if h.reachable else 'orange' }}">
+      <div class="metric-label">{{ h.hostname or h.host }}{% if h.self %} (THIS){% endif %}</div>
+      {% if h.reachable %}
+        <div class="metric-val">{{ h.ct_count }}/{{ h.vm_count }}</div>
+        <div class="metric-sub">
+          CT/VM &middot; {{ h.cores }} cores &middot; load {{ h.load1 }}<br>
+          {% if h.mem_total %}RAM {{ (h.mem_avail / 1073741824)|round(1) }} of {{ (h.mem_total / 1073741824)|round(1) }} GB free<br>{% endif %}
+          {% if h.store_total %}{{ h.store_name }} {{ (h.store_avail / 1073741824)|round(0)|int }} of {{ (h.store_total / 1073741824)|round(0)|int }} GB free{% endif %}
+        </div>
+      {% else %}
+        <div class="metric-val">--</div>
+        <div class="metric-sub">unreachable<br>{{ h.error }}</div>
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+</div>
+
 <div class="panel"><div class="panel-hdr"><div class="panel-title">CLONE PARAMETERS</div><div class="panel-badge idle" id="form-status">READY</div></div>
 <form id="clone-form">
   <div class="form-grid">
@@ -887,6 +1043,7 @@ def index():
         storages=list_storage_backends(), default_storage=DEFAULT_STORAGE,
         templates=list_templates(), default_template=str(TEMPLATE_VMID),
         bridges=list_bridges(),
+        mesh=mesh_status(),
         history=transfer_history())
 
 
@@ -934,6 +1091,13 @@ def api_templates():
 def api_bridges():
     """Network bridges on this host, flagged public or private."""
     return jsonify({"bridges": list_bridges()})
+
+
+@app.route("/api/mesh")
+def api_mesh():
+    """This host plus every configured peer, with resources. Peers are
+    contacted over the tailnet only."""
+    return jsonify({"mesh": mesh_status()})
 
 
 @app.route("/clone-stream", methods=["POST"])
