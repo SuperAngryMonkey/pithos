@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pithos v0.9.0 - LXC and VM provisioner + host-to-host transfer.
+"""Pithos v0.9.1 - LXC and VM provisioner + host-to-host transfer.
 
 v0.2.2: optional HTTP Basic Auth covering every route (see AUTH_FILE below).
 v0.2.3: parallel inventory gathering + stale-while-revalidate cache, so the
