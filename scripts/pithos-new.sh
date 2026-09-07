@@ -21,6 +21,8 @@ TAG="${TAG:-tag:lxc}"
 STORAGE="${STORAGE:-local-lvm}"
 # Start the container when the host boots. On by default.
 ONBOOT="${ONBOOT:-1}"
+# Network bridge for the clone. Empty means inherit the template's.
+BRIDGE="${BRIDGE:-}"
 NETWORK_WAIT_RETRIES="${NETWORK_WAIT_RETRIES:-150}"
 
 usage() {
@@ -57,6 +59,14 @@ while [[ $# -gt 0 ]]; do
         --template)
             TEMPLATE_VMID="$2"
             shift 2
+            ;;
+        --bridge)
+            BRIDGE="$2"
+            shift 2
+            ;;
+        --bridge=*)
+            BRIDGE="${1#--bridge=}"
+            shift
             ;;
         --template=*)
             TEMPLATE_VMID="${1#--template=}"
@@ -185,6 +195,13 @@ pct clone "$TEMPLATE_VMID" "$NEW_VMID" --hostname "$NEW_HOST" --storage "$STORAG
 
 # Start on host boot. Defaults to on: a container that silently stays down
 # after a power cut is almost never what anyone wants.
+if [[ -n "$BRIDGE" ]]; then
+    # Clones inherit the template's bridge, which on a host with a public
+    # bridge would put the container straight on the internet.
+    echo "[*] Attaching to bridge $BRIDGE"
+    pct set "$NEW_VMID" --net0 "name=eth0,bridge=${BRIDGE},ip=dhcp,firewall=1"
+fi
+
 pct set "$NEW_VMID" --onboot "$ONBOOT"
 if [[ "$ONBOOT" == "1" ]]; then
     echo "[*] onboot enabled - will start automatically after a host reboot"

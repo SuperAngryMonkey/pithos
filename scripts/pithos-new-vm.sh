@@ -10,6 +10,7 @@ set -euo pipefail
 TEMPLATE_VMID="${TEMPLATE_VMID:-}"
 STORAGE="${STORAGE:-}"
 ONBOOT="${ONBOOT:-1}"
+BRIDGE="${BRIDGE:-}"   # empty = inherit the template's bridge
 OAUTH_FILE="${OAUTH_FILE:-/root/.tailscale/oauth}"
 TAG="${TAG:-tag:lxc}"
 CIUSER="${CIUSER:-pithos}"
@@ -36,6 +37,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --template)   TEMPLATE_VMID="$2"; shift 2 ;;
         --template=*) TEMPLATE_VMID="${1#--template=}"; shift ;;
+        --bridge)     BRIDGE="$2"; shift 2 ;;
+        --bridge=*)   BRIDGE="${1#--bridge=}"; shift ;;
         --storage)    STORAGE="$2"; shift 2 ;;
         --storage=*)  STORAGE="${1#--storage=}"; shift ;;
         --onboot)     ONBOOT=1; shift ;;
@@ -109,6 +112,11 @@ echo "[*] Cloning $TEMPLATE_VMID -> $NEW_VMID ($NEW_HOST)..."
 CLONE_ARGS=(--name "$NEW_HOST" --full)
 [[ -n "$STORAGE" ]] && CLONE_ARGS+=(--storage "$STORAGE")
 qm clone "$TEMPLATE_VMID" "$NEW_VMID" "${CLONE_ARGS[@]}"
+
+if [[ -n "$BRIDGE" ]]; then
+    echo "[*] Attaching to bridge $BRIDGE"
+    qm set "$NEW_VMID" --net0 "virtio,bridge=${BRIDGE}" >/dev/null
+fi
 
 qm set "$NEW_VMID" \
     --ciuser "$CIUSER" --cipassword "$CIPASS" \

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pithos v0.5.0 - LXC and VM provisioner + host-to-host transfer.
+"""Pithos v0.6.0 - LXC and VM provisioner + host-to-host transfer.
 
 v0.2.2: optional HTTP Basic Auth covering every route (see AUTH_FILE below).
 v0.2.3: parallel inventory gathering + stale-while-revalidate cache, so the
@@ -24,6 +24,9 @@ v0.4.0: template choice - templates are enumerated (LXC and VM), exposed at
 not yet provisionable.
 v0.5.0: VM provisioning. Cloning a VM template runs pithos-new-vm (qm clone
 plus a cloud-init drive) instead of pithos-new (pct clone plus pct exec).
+v0.6.0: network bridge selection. Bridges are enumerated and flagged public
+or private, so a clone is placed deliberately instead of inheriting the
+template's - which on a host with a public bridge put guests on the internet.
 """
 import subprocess
 import re
@@ -173,6 +176,64 @@ def _template_exists_uncached():
     return False
 
 
+
+
+def _is_private(ip):
+    """RFC1918 / CGNAT / link-local. Anything else is publicly routable."""
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return True
+    # Some Python versions do not treat CGNAT as private; tailnet addresses
+    # live there and are emphatically not public.
+    if a in ipaddress.ip_network("100.64.0.0/10"):
+        return True
+    return a.is_private or a.is_loopback or a.is_link_local
+
+
+def _list_bridges_uncached():
+    """Bridges on this host, with their address and whether it is public.
+
+    Clones inherit the template's bridge unless told otherwise, which on a host
+    with a public bridge means a new guest can land straight on the internet.
+    Surfacing 'public' lets the picker warn rather than silently do that.
+    """
+    out = []
+    seen = {}
+    # Only real bridges. "ip addr show type bridge" is not reliably filtered on
+    # every iproute2 build, so take the link list as authoritative.
+    try:
+        allb = subprocess.check_output(
+            ["ip", "-o", "link", "show", "type", "bridge"], text=True, timeout=5)
+        for line in allb.strip().split("\n"):
+            if ":" not in line:
+                continue
+            nm = line.split(":")[1].strip().split("@")[0]
+            # Skip the per-guest firewall bridges Proxmox creates.
+            if nm and not nm.startswith(("fwbr", "fwln", "fwpr", "tap", "veth")):
+                seen[nm] = ""
+    except Exception:
+        pass
+
+    try:
+        raw = subprocess.check_output(["ip", "-4", "-o", "addr", "show"], text=True, timeout=5)
+        for line in raw.strip().split("\n"):
+            parts = line.split()
+            if len(parts) >= 4 and parts[1] in seen and not seen[parts[1]]:
+                seen[parts[1]] = parts[3]
+    except Exception:
+        pass
+
+    for name in sorted(seen):
+        cidr = seen[name]
+        ip = cidr.split("/")[0] if cidr else ""
+        out.append({"name": name, "cidr": cidr,
+                    "public": bool(ip) and not _is_private(ip)})
+    return out
+
+
+def list_bridges():
+    return _swr("bridges", _list_bridges_uncached)
 
 def _list_templates_uncached():
     """Every template on this host, LXC and VM, newest VMID last.
@@ -657,6 +718,13 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS</titl
       </option>
       {% endfor %}
     </select></div>
+    <div><label class="form-label">NETWORK</label><select class="form-select" name="bridge">
+      {% for b in bridges %}
+      <option value="{{ b.name }}"{% if not b.public and loop.first %} selected{% endif %}>
+        {{ b.name }}{% if b.cidr %} ({{ b.cidr }}){% endif %}{% if b.public %} - PUBLIC{% endif %}
+      </option>
+      {% endfor %}
+    </select></div>
     <div><label class="form-label">STORAGE BACKEND</label><select class="form-select" name="storage">
       {% for s in storages %}<option value="{{ s.name }}"{% if s.name == default_storage %} selected{% endif %}>{{ s.name }} ({{ s.type }})</option>{% endfor %}
     </select></div>
@@ -818,6 +886,7 @@ def index():
         m=host_metrics(), containers=list_containers(),
         storages=list_storage_backends(), default_storage=DEFAULT_STORAGE,
         templates=list_templates(), default_template=str(TEMPLATE_VMID),
+        bridges=list_bridges(),
         history=transfer_history())
 
 
@@ -861,6 +930,12 @@ def api_templates():
     return jsonify({"templates": list_templates()})
 
 
+@app.route("/api/bridges")
+def api_bridges():
+    """Network bridges on this host, flagged public or private."""
+    return jsonify({"bridges": list_bridges()})
+
+
 @app.route("/clone-stream", methods=["POST"])
 def clone_stream():
     if not template_exists():
@@ -885,6 +960,11 @@ def clone_stream():
     if template not in _known:
         return Response("[!] Unknown template " + template + "\n", mimetype="text/plain")
     _kind = _known[template]["kind"]
+
+    bridge = request.form.get("bridge", "").strip()
+    if bridge:
+        if bridge not in {b["name"] for b in list_bridges()}:
+            return Response("[!] Unknown bridge " + bridge + "\n", mimetype="text/plain")
     if not re.match(r"^[a-zA-Z0-9_\-]+$", storage):
         return Response("[!] Invalid storage.\n", mimetype="text/plain")
 
@@ -894,7 +974,8 @@ def clone_stream():
             _script = CLONE_SCRIPT if _kind == "lxc" else CLONE_VM_SCRIPT
             proc = subprocess.Popen([_script, str(vmid_int), hostname, "--storage", storage,
                                      "--onboot" if onboot == "1" else "--no-onboot",
-                                     "--template", template],
+                                     "--template", template]
+                                    + (["--bridge", bridge] if bridge else []),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
             for line in iter(proc.stdout.readline, ""): yield line
             proc.wait()
