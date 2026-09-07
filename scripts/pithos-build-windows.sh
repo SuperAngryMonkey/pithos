@@ -121,7 +121,9 @@ echo "[*] Answer-file CD: local:iso/${CFG_ISO}"
 # ---- create the VM ------------------------------------------------------
 # q35 + OVMF + virtio-scsi-single + virtio net + guest agent. Ballooning off:
 # it interacts badly with Windows in a template.
-CREATE=(qm create "$VMID" --name "win${VARIANT}-tmpl" --machine q35 --bios ovmf
+# "win11" already carries the prefix; "2019"/"2025" do not.
+case "$VARIANT" in win*) TMPL_NAME="${VARIANT}-tmpl" ;; *) TMPL_NAME="win${VARIANT}-tmpl" ;; esac
+CREATE=(qm create "$VMID" --name "$TMPL_NAME" --machine q35 --bios ovmf
         --cpu x86-64-v2-AES --sockets 1 --cores "$CORES" --memory "$MEMORY" --balloon 0
         --scsihw virtio-scsi-single --agent enabled=1 --onboot 0
         --boot "order=ide2;scsi0")
@@ -142,7 +144,7 @@ CREATE+=(--scsi0 "${ST}:${DISK},discard=on,ssd=1,iothread=1"
 [[ "$VARIANT" == "win11" ]] && CREATE+=(--tpmstate0 "${ST}:1,version=v2.0")
 
 "${CREATE[@]}" >/dev/null
-echo "[*] Created VM $VMID (win${VARIANT}-tmpl) on $ST"
+echo "[*] Created VM $VMID ($TMPL_NAME) on $ST"
 
 # Windows UEFI media waits for a keypress at "Press any key to boot from CD".
 # Without one it falls through to the empty disk and finds nothing bootable.

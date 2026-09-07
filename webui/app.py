@@ -741,6 +741,15 @@ def transfer_history(limit=10):
 
 
 SHARED_STYLE = r"""
+:root[data-theme="light"]{
+  /* Matches Clio's light theme. The dark palette's neons are unreadable on a
+     light background, so accents are re-picked rather than reused. */
+  --c1:#faf9f7;--c2:#efedea;--c3:#e8e5e0;
+  --acc:#0a6b8a;--acc2:#c2410c;--acc3:#15803d;--danger:#c2410c;
+  --txt:#26262c;--txt2:#6b6b76;--txt3:#8a8a94;
+  --border:1px solid #dcd9d4;--border-strong:1px solid #cfcbc4;
+  --border-subtle:1px solid #e8e5e0;
+}
 :root{--c1:#0a0a0f;--c2:#0f0f1a;--c3:#14141f;--acc:#00d4ff;--acc2:#ff6b35;--acc3:#00ff88;--danger:#ff3366;--txt:#e8e8f0;--txt2:#8888aa;--txt3:#4444aa;--fmono:'IBM Plex Mono',monospace;--fdisplay:'Bebas Neue',sans-serif;--border:1px solid rgba(0,212,255,0.12);--border-strong:1px solid rgba(0,212,255,0.2);--border-subtle:1px solid rgba(255,255,255,0.05);}
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;background:var(--c1);color:var(--txt);font-family:var(--fmono);font-size:12px;}
@@ -751,7 +760,7 @@ body{padding:20px;max-width:1400px;margin:0 auto;}
 .logo{font-family:var(--fdisplay);font-size:42px;letter-spacing:4px;color:var(--acc);line-height:1;}
 .subtitle{font-size:10px;color:var(--txt2);letter-spacing:2px;text-transform:uppercase;}
 .clock{font-size:16px;color:var(--txt2);letter-spacing:2px;}
-.status-dot{width:8px;height:8px;border-radius:50%;background:var(--acc3);box-shadow:0 0 8px var(--acc3);animation:pulse 2s infinite;}
+.themebtn{background:none;border:var(--border);color:var(--txt2);font-family:var(--fmono);font-size:9px;letter-spacing:1px;padding:4px 9px;cursor:pointer;}.themebtn:hover{color:var(--txt);border:var(--border-strong);}.status-dot{width:8px;height:8px;border-radius:50%;background:var(--acc3);box-shadow:0 0 8px var(--acc3);animation:pulse 2s infinite;}
 .status-dot.warn{background:var(--acc2);box-shadow:0 0 8px var(--acc2);}
 .status-txt{font-size:10px;color:var(--acc3);letter-spacing:1px;}
 .status-txt.warn{color:var(--acc2);}
@@ -781,7 +790,7 @@ body{padding:20px;max-width:1400px;margin:0 auto;}
 
 
 # Setup page (template not found) — same as v0.1.5
-SETUP_PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS SETUP</title>
+SETUP_PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><script>(function(){try{var s=localStorage.getItem("pithos-theme");document.documentElement.setAttribute("data-theme",s||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"));}catch(e){}})();</script><title>PITHOS SETUP</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>""" + SHARED_STYLE + r""" .setup-banner{background:var(--c2);border:1px solid var(--acc2);padding:24px;margin-bottom:20px;} .setup-title{font-family:var(--fdisplay);font-size:28px;letter-spacing:3px;color:var(--acc2);margin-bottom:8px;}</style></head><body>
 <div class="hdr"><div class="hdr-left"><div class="logo">PITHOS</div><div class="subtitle">SETUP REQUIRED // {{ hostname }}</div></div><div class="hdr-right"><div class="status-dot warn"></div><div class="status-txt warn">SETUP REQUIRED</div></div></div>
@@ -790,7 +799,7 @@ SETUP_PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS 
 pithos-build-template    # build from scratch, ~4 min</pre></div></body></html>"""
 
 
-INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS</title>
+INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><script>(function(){try{var s=localStorage.getItem("pithos-theme");document.documentElement.setAttribute("data-theme",s||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"));}catch(e){}})();</script><title>PITHOS</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>""" + SHARED_STYLE + r"""
 .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
@@ -837,7 +846,7 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS</titl
 .hist-status.success{color:var(--acc3);} .hist-status.failed{color:var(--danger);} .hist-status.partial{color:var(--acc2);}
 </style></head><body>
 <div class="hdr"><div class="hdr-left"><div class="logo">PITHOS</div><div class="subtitle">LXC PROVISIONER // {{ m.hostname }}</div></div>
-<div class="hdr-right"><div class="clock" id="clock">--:--:--</div><div class="status-dot"></div><div class="status-txt">OPERATIONAL</div></div></div>
+<div class="hdr-right"><button class="themebtn" id="tt" type="button" title="Switch light/dark">THEME</button><div class="clock" id="clock">--:--:--</div><div class="status-dot"></div><div class="status-txt">OPERATIONAL</div></div></div>
 
 <div class="metrics">
   <div class="metric blue"><div class="metric-label">CONTAINERS</div><div class="metric-val">{{ m.ct_count }}</div><div class="metric-sub">LXC on host</div></div>
@@ -966,6 +975,12 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS</titl
 const NL = String.fromCharCode(10);
 let xferVmid = '', xferName = '', xferIdentity = 'fresh';
 
+document.getElementById('tt').addEventListener('click',function(){
+  var r=document.documentElement,
+      next=r.getAttribute('data-theme')==='light'?'dark':'light';
+  r.setAttribute('data-theme',next);
+  try{localStorage.setItem('pithos-theme',next);}catch(e){}
+});
 function tick(){var d=new Date(),p=n=>String(n).padStart(2,'0');document.getElementById('clock').textContent=p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
 setInterval(tick,1000);tick();
 
