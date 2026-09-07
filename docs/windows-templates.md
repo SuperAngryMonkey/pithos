@@ -66,6 +66,14 @@ Every one of these was a failure before it was a fix:
 - **Store app removal before sysprep.** A package provisioned but not installed
   (or the reverse) produces *"Sysprep was not able to validate your Windows
   installation"*. Windows Update causes this by refreshing Store apps mid-build.
+- **Reserved Storage (Windows 11).** Sysprep refuses to run while Windows
+  Update holds reserved storage: *"Audit mode cannot be turned on if reserved
+  storage is in use"* (`0x800F0975`). And it cannot be disabled while a
+  servicing operation is active (`0x800f0978`). A template sealed straight
+  after building never sees this; one left running for a few hours does,
+  because Windows Update services in the background. `--seal` stops Windows
+  Update, waits for TiWorker to finish, then disables reserved storage.
+  **Seal promptly** and you avoid the whole thing.
 - **`SkipRearm`.** Each `sysprep /generalize` consumes an activation rearm, and
   after about three you get `0xc004d307` and cannot seal at all.
 - **Tailscale state cleared.** Otherwise every clone inherits one node identity

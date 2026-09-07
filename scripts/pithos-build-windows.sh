@@ -54,6 +54,30 @@ if [[ -n "$SEAL" ]]; then
     qm guest exec "$SEAL" --timeout 900 -- powershell -NoProfile -ExecutionPolicy Bypass \
         -Command "\$s=(Get-Volume | Where-Object {\$_.DriveType -eq 'CD-ROM' -and \$_.DriveLetter} | ForEach-Object { \$_.DriveLetter + ':\strip-appx.ps1' } | Where-Object {Test-Path \$_} | Select-Object -First 1); if(\$s){& \$s | Out-Null}" >/dev/null 2>&1 || true
 
+    # Windows 11 refuses to sysprep while Reserved Storage is in use, which it
+    # is whenever Windows Update has been servicing in the background:
+    #   "Audit mode cannot be turned on if reserved storage is in use" (0x800F0975)
+    # A template built and sealed straight away never sees this; one left
+    # running for a few hours does.
+    # Reserved Storage cannot be disabled *while* a servicing operation holds
+    # it (0x800f0978), so stop Windows Update first and let TiWorker settle.
+    echo "[*] Quiescing Windows Update..."
+    qm guest exec "$SEAL" --timeout 120 -- powershell -NoProfile -Command \
+        "Stop-Service wuauserv,UsoSvc,TrustedInstaller -Force -EA 0; Set-Service wuauserv -StartupType Disabled -EA 0" >/dev/null 2>&1 || true
+
+    for i in $(seq 1 20); do
+        BUSY=$(qm guest exec "$SEAL" --timeout 30 -- powershell -NoProfile -Command \
+            "(Get-Process TiWorker,TrustedInstaller -EA 0 | Measure-Object).Count" 2>/dev/null \
+            | grep -oE '"out-data" : "[0-9]+' | grep -oE '[0-9]+$')
+        [[ "${BUSY:-0}" == "0" ]] && break
+        echo "    servicing still active, waiting..."
+        sleep 15
+    done
+
+    echo "[*] Disabling Reserved Storage (blocks sysprep on Windows 11)..."
+    qm guest exec "$SEAL" --timeout 300 -- powershell -NoProfile -Command \
+        "try{ Set-WindowsReservedStorageState -State Disabled -EA Stop } catch { }" >/dev/null 2>&1 || true
+
     echo "[*] Clearing Tailscale state so clones cannot share an identity..."
     qm guest exec "$SEAL" --timeout 60 -- cmd /c \
         "net stop Tailscale & rd /s /q C:\ProgramData\Tailscale & powercfg /h off" >/dev/null 2>&1 || true
