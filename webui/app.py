@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pithos v0.7.0 - LXC and VM provisioner + host-to-host transfer.
+"""Pithos v0.7.1 - LXC and VM provisioner + host-to-host transfer.
 
 v0.2.2: optional HTTP Basic Auth covering every route (see AUTH_FILE below).
 v0.2.3: parallel inventory gathering + stale-while-revalidate cache, so the
@@ -30,6 +30,8 @@ template's - which on a host with a public bridge put guests on the internet.
 v0.7.0: mesh view. PITHOS_PEERS lists other Pithos hosts and the dashboard
 shows a resource card per host. Peers are contacted over the tailnet only -
 an address outside 100.64.0.0/10 is refused at startup.
+v0.7.1: per-peer mesh credentials (user:pass@host:port), so a host that
+keeps its own credential does not force the mesh onto one shared password.
 """
 import subprocess
 import re
@@ -237,13 +239,21 @@ def _parse_peers():
         item = item.strip()
         if not item:
             continue
-        host, _, port = item.partition(":")
+        # Optional per-peer credentials: user:pass@host:port. A host that keeps
+        # its own credential (an internet-facing node, say) should not force the
+        # whole mesh onto one shared password.
+        creds, sep, hostpart = item.rpartition("@")
+        if not sep:
+            hostpart, creds = item, ""
+        user, _, pw = creds.partition(":")
+        host, _, port = hostpart.partition(":")
         if not _peer_is_tailnet(host):
             app.logger.error(
                 "pithos: peer %r is not a tailnet address - refusing to use it. "
-                "Peers must resolve into 100.64.0.0/10.", item)
+                "Peers must resolve into 100.64.0.0/10.", host)
             continue
-        peers.append({"host": host, "port": int(port) if port else 8080})
+        peers.append({"host": host, "port": int(port) if port else 8080,
+                      "user": user or MESH_USER, "pass": pw or MESH_PASS})
     return peers
 
 
@@ -258,8 +268,10 @@ def _peer_status(peer):
             "reachable": False, "error": ""}
     try:
         req = urllib.request.Request(url)
-        if MESH_USER:
-            tok = base64.b64encode(("%s:%s" % (MESH_USER, MESH_PASS)).encode()).decode()
+        u = peer.get("user") or MESH_USER
+        pw = peer.get("pass") or MESH_PASS
+        if u:
+            tok = base64.b64encode(("%s:%s" % (u, pw)).encode()).decode()
             req.add_header("Authorization", "Basic " + tok)
         with urllib.request.urlopen(req, timeout=MESH_TIMEOUT) as r:
             card.update(json.loads(r.read().decode()))
