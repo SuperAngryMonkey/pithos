@@ -54,13 +54,25 @@ bash "$DEST/scripts/install-webui.sh"
 
 # Repeat the important bits last: on a fresh host the package install and
 # clone output scrolls the URL and password off the screen.
-LAN_IP=$(ip -4 addr show vmbr0 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1)
-[[ -z "$LAN_IP" ]] && LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-[[ -z "$LAN_IP" ]] && LAN_IP="<this-host>"
+# Honour a configured port rather than assuming 8080.
+PORT=$(systemctl show pithos -p Environment 2>/dev/null | tr ' ' '\n' | sed -n 's/^PORT=//p' | tail -1)
+[[ -z "$PORT" ]] && PORT=8080
+
+# Prefer a private address. On an internet-facing host vmbr0 holds the public
+# IP, and printing that as "where to browse" is actively bad advice.
+PICK_IP=""
+for cand in $(hostname -I 2>/dev/null); do
+    case "$cand" in
+        10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) PICK_IP="$cand"; break ;;
+    esac
+done
+# A tailnet address is a fine second choice - reachable and not public.
+[[ -z "$PICK_IP" ]] && PICK_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.' | head -1)
+[[ -z "$PICK_IP" ]] && PICK_IP="<this-host>"
 
 echo
 echo "================================================================"
-echo "  Pithos is running:  http://${LAN_IP}:8080/"
+echo "  Pithos is running:  http://${PICK_IP}:${PORT}/"
 if [[ -f /root/.pithos/initial-password ]]; then
     echo "  Sign in:            $(sed -n 1p /root/.pithos/initial-password) / $(sed -n 2p /root/.pithos/initial-password)"
     echo "                      (also in /root/.pithos/initial-password)"
@@ -88,6 +100,6 @@ cat <<'NEXT'
        pithos-build-template              # Debian LXC
        pithos-build-windows --variant 2019 --iso local:iso/<your.iso>
 
-  3. Open the web UI on port 8080 and sign in with the credential above.
+  3. Open the web UI at the address above and sign in.
 
 NEXT
