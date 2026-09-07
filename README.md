@@ -28,6 +28,20 @@ No more `pct create` arguments. No more SSH keys to copy. No more `tailscale up`
 
 ---
 
+## Install
+
+On a Proxmox VE host, as root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SuperAngryMonkey/pithos/main/bootstrap.sh | bash
+```
+
+That installs the CLI, the Windows template assets and the web UI, generates an
+admin credential and prints it once. Safe to re-run to update.
+
+Then add Tailscale OAuth credentials and build a template - the installer
+prints both steps when it finishes.
+
 ## What this gives you
 
 - **A pre-built LXC template** with Tailscale baked in, configured for unprivileged operation with TUN passthrough.

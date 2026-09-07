@@ -36,7 +36,9 @@ rm -f /etc/systemd/system/ts-clone-webui.service
 rm -rf /opt/ts-clone-webui
 
 # Try local checkout first, fall back to curl
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# BASH_SOURCE is unset when the script is piped into bash, which under set -u
+# aborts before anything runs. Fall back to $0, then to empty.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")"
 LOCAL_APP="$(dirname "$SCRIPT_DIR")/webui/app.py"
 
 mkdir -p "$INSTALL_DIR"
@@ -90,6 +92,10 @@ else
     mkdir -p "$(dirname "$AUTH_FILE")" && chmod 700 "$(dirname "$AUTH_FILE")"
     printf 'admin:%s\n' "$HASH" > "$AUTH_FILE"
     chmod 600 "$AUTH_FILE"
+    # Also drop it where it can be recovered: on a fresh host the install
+    # output scrolls, and only the hash is kept in the auth file.
+    printf 'admin\n%s\n' "$GENERATED_PASS" > /root/.pithos/initial-password
+    chmod 600 /root/.pithos/initial-password
     echo "[*] Generated an admin credential."
 fi
 
@@ -114,9 +120,10 @@ echo
 if [[ -n "$GENERATED_PASS" ]]; then
     echo "Sign in:  admin / $GENERATED_PASS"
     echo
-    echo "          ^ shown once. Store it now; only the hash is kept,"
-    echo "            in $AUTH_FILE. To change it, delete that file and"
-    echo "            re-run this installer."
+    echo
+    echo "          Also saved to /root/.pithos/initial-password"
+    echo "          (root-only). Delete it once you have stored it."
+    echo "          To change the password: delete $AUTH_FILE and re-run."
     echo
 fi
 echo "Service: systemctl status pithos"

@@ -302,6 +302,46 @@ def _mesh_uncached():
 def mesh_status():
     return _swr("mesh", _mesh_uncached, ttl=MESH_CACHE_TTL)
 
+
+# --- Dropbox (Advanced tab) ----------------------------------------------
+# Uploads run on this host so large files never route through a workstation.
+# The token lives on disk and is never returned by any route.
+DROPBOX_TOKEN_FILE = _env("DROPBOX_TOKEN_FILE", "/root/.dropbox-token")
+DROPBOX_UPLOADER = _env("DROPBOX_UPLOADER", "/usr/local/sbin/pithos-dbx-upload")
+
+
+def dropbox_ready():
+    try:
+        return os.path.getsize(DROPBOX_TOKEN_FILE) > 0
+    except OSError:
+        return False
+
+
+def _human(n):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return "%.0f %s" % (n, unit) if unit != "B" else "%d B" % n
+        n /= 1024.0
+
+
+def list_isos():
+    """ISOs in the host's ISO stores, for the upload picker."""
+    out = []
+    for d in ("/var/lib/vz/template/iso",):
+        try:
+            for name in sorted(os.listdir(d)):
+                if not name.lower().endswith(".iso"):
+                    continue
+                full = os.path.join(d, name)
+                try:
+                    out.append({"name": name, "path": full,
+                                "size": _human(os.path.getsize(full))})
+                except OSError:
+                    continue
+        except OSError:
+            continue
+    return out
+
 def _list_bridges_uncached():
     """Bridges on this host, with their address and whether it is public.
 
@@ -763,7 +803,7 @@ body{padding:20px;max-width:1400px;margin:0 auto;}
 .logo{font-family:var(--fdisplay);font-size:42px;letter-spacing:4px;color:var(--acc);line-height:1;}
 .subtitle{font-size:10px;color:var(--txt2);letter-spacing:2px;text-transform:uppercase;}
 .clock{font-size:16px;color:var(--txt2);letter-spacing:2px;}
-.themebtn{background:none;border:var(--border);color:var(--txt2);font-family:var(--fmono);font-size:9px;letter-spacing:1px;padding:4px 9px;cursor:pointer;}.themebtn:hover{color:var(--txt);border:var(--border-strong);}.status-dot{width:8px;height:8px;border-radius:50%;background:var(--acc3);box-shadow:0 0 8px var(--acc3);animation:pulse 2s infinite;}
+.tabs{display:flex;gap:2px;margin-bottom:18px;border-bottom:var(--border);}.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--txt2);font-family:var(--fdisplay);font-size:15px;letter-spacing:2px;padding:8px 18px;cursor:pointer;}.tab:hover{color:var(--txt);}.tab.on{color:var(--acc);border-bottom-color:var(--acc);}.tabpane{display:none;}.tabpane.on{display:block;}.help h3{font-family:var(--fdisplay);font-size:15px;letter-spacing:2px;color:var(--acc);margin:18px 0 6px;}.help p,.help li{font-size:12px;color:var(--txt);line-height:1.7;}.help ul{margin:4px 0 4px 18px;}.help code{background:var(--c3);padding:1px 5px;color:var(--acc3);}.help pre{background:var(--c3);padding:10px 12px;overflow-x:auto;margin:6px 0;font-size:11px;color:var(--txt);}.help a{color:var(--acc);}.themebtn{background:none;border:var(--border);color:var(--txt2);font-family:var(--fmono);font-size:9px;letter-spacing:1px;padding:4px 9px;cursor:pointer;}.themebtn:hover{color:var(--txt);border:var(--border-strong);}.status-dot{width:8px;height:8px;border-radius:50%;background:var(--acc3);box-shadow:0 0 8px var(--acc3);animation:pulse 2s infinite;}
 .status-dot.warn{background:var(--acc2);box-shadow:0 0 8px var(--acc2);}
 .status-txt{font-size:10px;color:var(--acc3);letter-spacing:1px;}
 .status-txt.warn{color:var(--acc2);}
@@ -858,6 +898,13 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><script>(function()
   <div class="metric blue"><div class="metric-label">NEXT VMID</div><div class="metric-val">{{ m.next_vmid }}</div><div class="metric-sub">auto-pick</div></div>
 </div>
 
+<div class="tabs">
+  <button class="tab on" data-pane="pane-main" type="button">PROVISION</button>
+  <button class="tab" data-pane="pane-advanced" type="button">ADVANCED</button>
+  <button class="tab" data-pane="pane-help" type="button">HELP</button>
+</div>
+
+<div class="tabpane on" id="pane-main">
 <div class="panel">
   <div class="panel-hdr"><div class="panel-title">MESH</div>
     <div class="panel-badge idle">{{ mesh|length }} HOST{{ '' if mesh|length == 1 else 'S' }}</div></div>
@@ -957,6 +1004,111 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><script>(function()
 </tbody></table>{% else %}<div class="inv-empty">No transfers recorded yet.</div>{% endif %}</div>
 
 <!-- Transfer modal -->
+</div><!-- /pane-main -->
+
+<div class="tabpane" id="pane-advanced">
+  <div class="panel">
+    <div class="panel-hdr"><div class="panel-title">DROPBOX</div>
+      <div class="panel-badge idle" id="dbx-badge">{{ 'CONFIGURED' if dropbox_ready else 'NOT CONFIGURED' }}</div></div>
+    {% if dropbox_ready %}
+    <p style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px;">
+      Upload ISOs from this host straight to Dropbox. The transfer runs here,
+      so nothing is routed through your workstation.
+    </p>
+    <div class="form-grid">
+      <div><label class="form-label">DESTINATION FOLDER</label>
+        <input class="form-input" id="dbx-dest" value="/Dean-James"></div>
+    </div>
+    <div style="margin-top:12px;">
+      <label class="form-label">ISOs ON THIS HOST</label>
+      <div id="dbx-isos" style="margin-top:6px;">
+        {% for i in isos %}
+        <label style="display:block;font-size:12px;padding:3px 0;">
+          <input type="checkbox" class="dbx-iso" value="{{ i.path }}"> {{ i.name }}
+          <span style="color:var(--txt3);">({{ i.size }})</span>
+        </label>
+        {% else %}
+        <span style="font-size:12px;color:var(--txt3);">No ISOs found.</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="btn-row"><button class="btn" type="button" id="dbx-go">UPLOAD SELECTED</button></div>
+    <div class="console" id="dbx-console" style="display:none;"></div>
+    {% else %}
+    <p style="font-size:12px;color:var(--txt2);line-height:1.7;">
+      No Dropbox token on this host. To enable uploads, create a Dropbox app
+      with the <code>files.content.write</code> scope, generate an access token,
+      and place it at <code>/root/.dropbox-token</code> (<code>chmod 600</code>).
+      Reload this page afterwards.
+    </p>
+    {% endif %}
+  </div>
+</div><!-- /pane-advanced -->
+
+<div class="tabpane" id="pane-help">
+  <div class="panel help">
+    <div class="panel-hdr"><div class="panel-title">GETTING STARTED</div></div>
+
+    <h3>1. Tailscale credentials</h3>
+    <p>Pithos mints a fresh, single-use key for every guest it creates, so nothing
+    joins your tailnet with a shared or reused key. It needs an OAuth client to do
+    that. Create one in the Tailscale admin console with the
+    <code>devices:write</code> scope, then on this host:</p>
+    <pre>mkdir -p /root/.tailscale &amp;&amp; chmod 700 /root/.tailscale
+nano /root/.tailscale/oauth
+    TS_OAUTH_CLIENT_ID=...
+    TS_OAUTH_CLIENT_SECRET=...
+chmod 600 /root/.tailscale/oauth</pre>
+    <p>Your ACL must also list the tag Pithos requests (<code>tag:lxc</code> by
+    default) under <code>tagOwners</code>. If it does not, key creation fails with
+    <em>"requested tags are invalid or not permitted"</em> &mdash; that is an ACL
+    problem, not a Pithos one, and it is the most common first failure.</p>
+
+    <h3>2. A template to clone</h3>
+    <p>Pithos clones templates; it does not build guests from scratch. For Linux:</p>
+    <pre>pithos-build-template</pre>
+    <p>For Windows, supply your own ISO and a virtio-win ISO, then:</p>
+    <pre>pithos-build-windows --variant 2019 --iso local:iso/&lt;your.iso&gt;
+pithos-build-windows --seal &lt;vmid&gt;</pre>
+    <p>The install runs unattended &mdash; no clicking through Setup.</p>
+
+    <h3>3. Provision</h3>
+    <p>On the PROVISION tab pick a template, a network and a storage backend, give
+    it a hostname, and clone. Roughly 30 seconds for a container; a few minutes for
+    a VM, which restarts once at the end to apply its name.</p>
+
+    <h3>Networks</h3>
+    <p>Bridges marked <strong>PUBLIC</strong> carry a publicly routable address.
+    A guest placed there is on the internet directly. Pick a private bridge unless
+    you specifically intend otherwise.</p>
+
+    <h3>Start at boot</h3>
+    <p>New guests are set to start with the host by default. Anything showing
+    <strong>NO BOOT</strong> in the inventory will stay down after a power cut
+    until started by hand. Fix one with:</p>
+    <pre>pct set &lt;vmid&gt; --onboot 1     # or: qm set &lt;vmid&gt; --onboot 1</pre>
+
+    <h3>Mesh</h3>
+    <p>Cards at the top show this host and its peers. Peers are set with
+    <code>PITHOS_PEERS</code> and are contacted <strong>over the tailnet only</strong>
+    &mdash; an address outside <code>100.64.0.0/10</code> is refused at startup.</p>
+
+    <h3>When something breaks</h3>
+    <ul>
+      <li><code>journalctl -u pithos -f</code> &mdash; the service log</li>
+      <li><code>systemctl status pithos</code> &mdash; is it running</li>
+      <li>Windows build stalled? Check <code>C:\pithos-build.log</code> in the VM</li>
+      <li>Forgot the password? <code>/root/.pithos/initial-password</code>, if not deleted</li>
+    </ul>
+
+    <h3>More</h3>
+    <p>Full documentation lives with the source at
+    <a href="https://github.com/SuperAngryMonkey/pithos" target="_blank" rel="noopener">github.com/SuperAngryMonkey/pithos</a>
+    &mdash; including Windows template internals and using Pithos against someone
+    else's tailnet.</p>
+  </div>
+</div><!-- /pane-help -->
+
 <div class="modal-bg" id="xfer-modal"><div class="modal">
 <div class="modal-title">TRANSFER CONTAINER</div>
 <div class="modal-sub" id="xfer-src">VMID — (—)</div>
@@ -977,6 +1129,35 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><script>(function()
 <script>
 const NL = String.fromCharCode(10);
 let xferVmid = '', xferName = '', xferIdentity = 'fresh';
+
+document.querySelectorAll('.tab').forEach(function(t){
+  t.addEventListener('click',function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});
+    document.querySelectorAll('.tabpane').forEach(function(x){x.classList.remove('on');});
+    t.classList.add('on');
+    document.getElementById(t.dataset.pane).classList.add('on');
+  });
+});
+
+var dbxGo=document.getElementById('dbx-go');
+if(dbxGo){dbxGo.addEventListener('click',function(){
+  var picked=[].slice.call(document.querySelectorAll('.dbx-iso:checked'));
+  if(!picked.length){alert('Select at least one ISO.');return;}
+  var con=document.getElementById('dbx-console');
+  con.style.display='block'; con.textContent='';
+  dbxGo.disabled=true;
+  var fd=new FormData();
+  fd.append('dest',document.getElementById('dbx-dest').value);
+  picked.forEach(function(c){fd.append('iso',c.value);});
+  fetch('/dbx-upload-stream',{method:'POST',body:fd}).then(function(r){
+    var rd=r.body.getReader(),dec=new TextDecoder();
+    (function pump(){rd.read().then(function(res){
+      if(res.done){dbxGo.disabled=false;return;}
+      con.textContent+=dec.decode(res.value,{stream:true});
+      con.scrollTop=con.scrollHeight; pump();
+    });})();
+  }).catch(function(e){con.textContent+='\n[!] '+e; dbxGo.disabled=false;});
+});}
 
 document.getElementById('tt').addEventListener('click',function(){
   var r=document.documentElement,
@@ -1074,6 +1255,7 @@ def index():
         templates=list_templates(), default_template=str(TEMPLATE_VMID),
         bridges=list_bridges(),
         mesh=mesh_status(),
+        dropbox_ready=dropbox_ready(), isos=list_isos(),
         history=transfer_history())
 
 
@@ -1128,6 +1310,37 @@ def api_mesh():
     """This host plus every configured peer, with resources. Peers are
     contacted over the tailnet only."""
     return jsonify({"mesh": mesh_status()})
+
+
+@app.route("/dbx-upload-stream", methods=["POST"])
+def dbx_upload_stream():
+    """Stream a Dropbox upload. Paths are validated against the host's real ISO
+    list, so a crafted post cannot exfiltrate an arbitrary file."""
+    if not dropbox_ready():
+        return Response("[!] No Dropbox token on this host.\n", mimetype="text/plain")
+
+    dest = (request.form.get("dest") or "/").strip() or "/"
+    if not dest.startswith("/") or ".." in dest:
+        return Response("[!] Invalid destination folder.\n", mimetype="text/plain")
+
+    wanted = request.form.getlist("iso")
+    allowed = {i["path"] for i in list_isos()}
+    files = [f for f in wanted if f in allowed]
+    if not files:
+        return Response("[!] Nothing selected, or files not recognised.\n",
+                        mimetype="text/plain")
+
+    def run():
+        yield "[*] Uploading %d file(s) to %s\n" % (len(files), dest)
+        env = dict(os.environ, DEST_DIR=dest)
+        proc = subprocess.Popen([DROPBOX_UPLOADER] + files, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
+        for line in iter(proc.stdout.readline, ""):
+            yield line
+        proc.wait()
+        yield "\n[%s] exit %d\n" % ("OK" if proc.returncode == 0 else "!!", proc.returncode)
+
+    return Response(run(), mimetype="text/plain")
 
 
 @app.route("/clone-stream", methods=["POST"])
