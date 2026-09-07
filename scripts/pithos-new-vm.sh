@@ -14,7 +14,9 @@ BRIDGE="${BRIDGE:-}"   # empty = inherit the template's bridge
 OAUTH_FILE="${OAUTH_FILE:-/root/.tailscale/oauth}"
 TAG="${TAG:-tag:lxc}"
 CIUSER="${CIUSER:-pithos}"
-CIPASS="${CIPASS:-ChangeMe1!}"
+# Per-clone password, generated unless CIPASS is set. A fixed default would be
+# a known credential on every VM anyone provisions.
+CIPASS="${CIPASS:-$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | head -c 16)Aa1!}"
 SNIPPET_STORE="${SNIPPET_STORE:-local}"
 SNIPPET_DIR="${SNIPPET_DIR:-/var/lib/vz/snippets}"
 KEY_TTL="${KEY_TTL:-1800}"
@@ -154,4 +156,5 @@ else
     echo "    so give it a little longer, then check C:\\pithos-join.log inside it."
 fi
 echo "    Auth key was single-use and expires in ${KEY_TTL}s."
+echo "    Sign in: $CIUSER / $CIPASS"
 echo "    user-data (contains the key) is at: $SNIPPET"

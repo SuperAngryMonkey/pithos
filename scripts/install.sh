@@ -46,6 +46,17 @@ install_script pithos-export-template.sh
 install_script pithos-transfer.sh
 install_script pithos-rejoin.sh
 install_script pithos-uninstall.sh
+install_script pithos-new-vm.sh
+install_script pithos-build-windows.sh
+
+# Windows answer-file assets. Templates are never shipped - users build their
+# own from their own media - so what gets installed is the recipe.
+if [[ -n "$SCRIPT_DIR" && -d "$SCRIPT_DIR/../templates/windows" ]]; then
+    echo "[*] Installing Windows template assets..."
+    mkdir -p /usr/local/share/pithos
+    cp -r "$SCRIPT_DIR/../templates/windows" /usr/local/share/pithos/
+    chmod -R 644 /usr/local/share/pithos/windows/*/* 2>/dev/null || true
+fi
 
 # Create log directory for transfer audit log
 mkdir -p /var/log/pithos

@@ -73,6 +73,26 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT_EOF
 
+# --- credential ----------------------------------------------------------
+# Pithos can create and destroy guests as root, so it must not be reachable
+# without a password. Generate one unless the operator already made an auth
+# file; PITHOS_NO_AUTH=1 opts out deliberately for an isolated lab.
+AUTH_FILE="${AUTH_FILE:-/root/.pithos/auth}"
+GENERATED_PASS=""
+if [[ -f "$AUTH_FILE" ]]; then
+    echo "[*] Existing credential at $AUTH_FILE - leaving it alone."
+elif [[ "${PITHOS_NO_AUTH:-0}" == "1" ]]; then
+    echo "[!] PITHOS_NO_AUTH=1 - installing with NO authentication."
+    echo "[!] Anything that can reach this port can provision as root."
+else
+    GENERATED_PASS=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
+    HASH=$(python3 -c "from werkzeug.security import generate_password_hash as g; import sys; print(g(sys.argv[1]))" "$GENERATED_PASS")
+    mkdir -p "$(dirname "$AUTH_FILE")" && chmod 700 "$(dirname "$AUTH_FILE")"
+    printf 'admin:%s\n' "$HASH" > "$AUTH_FILE"
+    chmod 600 "$AUTH_FILE"
+    echo "[*] Generated an admin credential."
+fi
+
 systemctl daemon-reload
 systemctl enable --now pithos.service
 sleep 2
@@ -91,5 +111,13 @@ echo "[✓] Pithos web UI running."
 echo
 echo "Access:  http://${LAN_IP}:${PORT}/"
 echo
+if [[ -n "$GENERATED_PASS" ]]; then
+    echo "Sign in:  admin / $GENERATED_PASS"
+    echo
+    echo "          ^ shown once. Store it now; only the hash is kept,"
+    echo "            in $AUTH_FILE. To change it, delete that file and"
+    echo "            re-run this installer."
+    echo
+fi
 echo "Service: systemctl status pithos"
 echo "Logs:    journalctl -u pithos -f"

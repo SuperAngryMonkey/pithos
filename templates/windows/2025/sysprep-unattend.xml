@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+  <settings pass="generalize">
+    <!-- Each sysprep /generalize consumes one activation re-arm and the limit is
+         low (3 on most SKUs). Rebuilding a template a few times exhausts it and
+         sysprep then fails with 0xc004d307. SkipRearm avoids spending one. -->
+    <component name="Microsoft-Windows-Security-SPP"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral"
+               versionScope="nonSxS">
+      <SkipRearm>1</SkipRearm>
+    </component>
+  </settings>
+</unattend>
