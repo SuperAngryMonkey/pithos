@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pithos v0.4.0 - LXC provisioner + host-to-host transfer.
+"""Pithos v0.5.0 - LXC and VM provisioner + host-to-host transfer.
 
 v0.2.2: optional HTTP Basic Auth covering every route (see AUTH_FILE below).
 v0.2.3: parallel inventory gathering + stale-while-revalidate cache, so the
@@ -22,6 +22,8 @@ the inventory, so containers restart after a power loss.
 v0.4.0: template choice - templates are enumerated (LXC and VM), exposed at
 /api/templates, and selectable in the clone form. VM templates are listed but
 not yet provisionable.
+v0.5.0: VM provisioning. Cloning a VM template runs pithos-new-vm (qm clone
+plus a cloud-init drive) instead of pithos-new (pct clone plus pct exec).
 """
 import subprocess
 import re
@@ -48,6 +50,7 @@ def _env(name, default=None):
 app = Flask(__name__)
 
 CLONE_SCRIPT = "/usr/local/sbin/pithos-new"
+CLONE_VM_SCRIPT = "/usr/local/sbin/pithos-new-vm"
 TRANSFER_SCRIPT = "/usr/local/sbin/pithos-transfer"
 DEFAULT_STORAGE = _env("DEFAULT_STORAGE", "local-lvm")
 # Admin-selectable per host: comma-separated storage names to keep out of the
@@ -649,8 +652,8 @@ INDEX = r"""<!doctype html><html><head><meta charset="utf-8"><title>PITHOS</titl
   <div class="form-grid row2">
     <div><label class="form-label">TEMPLATE</label><select class="form-select" name="template">
       {% for t in templates %}
-      <option value="{{ t.vmid }}"{% if t.kind != 'lxc' %} disabled{% endif %}{% if t.vmid == default_template %} selected{% endif %}>
-        {{ t.vmid }} - {{ t.name }} ({{ t.kind }}{% if t.kind != 'lxc' %}, not yet supported{% endif %})
+      <option value="{{ t.vmid }}"{% if t.vmid == default_template %} selected{% endif %}>
+        {{ t.vmid }} - {{ t.name }} ({{ t.kind }}{% if t.kind != 'lxc' %} - {{ t.os }}{% endif %})
       </option>
       {% endfor %}
     </select></div>
@@ -881,16 +884,15 @@ def clone_stream():
     _known = {t["vmid"]: t for t in list_templates()}
     if template not in _known:
         return Response("[!] Unknown template " + template + "\n", mimetype="text/plain")
-    if _known[template]["kind"] != "lxc":
-        return Response("[!] Template " + template + " is a VM template. "
-                        "VM provisioning is not supported yet.\n", mimetype="text/plain")
+    _kind = _known[template]["kind"]
     if not re.match(r"^[a-zA-Z0-9_\-]+$", storage):
         return Response("[!] Invalid storage.\n", mimetype="text/plain")
 
     def generate():
         yield "[*] Cloning " + hostname + " as VMID " + str(vmid_int) + "\n"
         try:
-            proc = subprocess.Popen([CLONE_SCRIPT, str(vmid_int), hostname, "--storage", storage,
+            _script = CLONE_SCRIPT if _kind == "lxc" else CLONE_VM_SCRIPT
+            proc = subprocess.Popen([_script, str(vmid_int), hostname, "--storage", storage,
                                      "--onboot" if onboot == "1" else "--no-onboot",
                                      "--template", template],
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
